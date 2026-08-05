@@ -1,0 +1,13 @@
+--[[
+	ClientBus.luau
+	--------------
+	Kênh liên lạc nội bộ giữa các script CLIENT (cùng chạy trong PlayerScripts).
+	Dùng để HUD (nút hotbar) báo cho InputController biết "vào chế độ đặt building".
+]]
+
+local ClientBus = {}
+
+-- Fire(buildingType: string) khi người chơi bấm nút xây trên hotbar.
+ClientBus.enterBuild = Instance.new("BindableEvent")
+
+return ClientBus
