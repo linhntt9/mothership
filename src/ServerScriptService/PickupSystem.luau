@@ -137,18 +137,24 @@ local function spawnInitial()
 	end
 end
 
--- Tìm Tàu Mẹ gần orb nhất trong tầm hút.
-local function nearestMothershipInMagnet(pos)
-	local best, bestD
+-- Tìm "thợ hút" gần orb nhất trong tầm: Tàu Mẹ HOẶC fleet unit. Trả về part + ownerId
+-- để orb bay tới đó và cộng scrap cho chủ (cả hạm đội cùng gom scrap).
+local function nearestAttractorInMagnet(pos)
+	local bestPart, bestOwner, bestD
+	local range = Config.PICKUP.MAGNET_RANGE
 	for _, e in pairs(GameState.motherships) do
 		if e.alive and e.part then
 			local d = (e.part.Position - pos).Magnitude
-			if d <= Config.PICKUP.MAGNET_RANGE and (not bestD or d < bestD) then
-				best, bestD = e, d
-			end
+			if d <= range and (not bestD or d < bestD) then bestPart, bestOwner, bestD = e.part, e.ownerId, d end
 		end
 	end
-	return best
+	for _, u in ipairs(GameState.units) do
+		if u.part and u.part.Parent then
+			local d = (u.part.Position - pos).Magnitude
+			if d <= range and (not bestD or d < bestD) then bestPart, bestOwner, bestD = u.part, u.ownerId, d end
+		end
+	end
+	return bestPart, bestOwner
 end
 
 local function updatePickups(dt)
@@ -157,32 +163,27 @@ local function updatePickups(dt)
 		if not p.part or not p.part.Parent then
 			table.remove(GameState.pickups, i)
 		elseif p.flyingTo then
-			local owner = GameState.motherships[p.flyingTo]
-			if not owner or not owner.alive or not owner.part then
-				p.flyingTo = nil -- mất chủ -> nằm lại
+			-- Mục tiêu hút (Tàu Mẹ/unit) còn tồn tại không?
+			if not p.flyPart or not p.flyPart.Parent then
+				p.flyingTo = nil; p.flyPart = nil -- mất mục tiêu -> hút lại
 			else
 				local pos = p.part.Position
-				local target = owner.part.Position
-				local delta = target - pos
+				local delta = p.flyPart.Position - pos
 				local dist = delta.Magnitude
 				if dist <= Config.PICKUP.COLLECT_DIST then
-					-- Thu: cộng scrap + huỷ orb
-					EconomySystem.add(p.flyingTo, p.value)
+					EconomySystem.add(p.flyingTo, p.value) -- cộng scrap cho chủ
 					p.part:Destroy()
 					table.remove(GameState.pickups, i)
 				else
 					local step = math.min(Config.PICKUP.FLY_SPEED * dt, dist)
 					p.part.Position = pos + delta.Unit * step
-					-- Nhỏ dần khi lại gần cho cảm giác "hút vào"
 					local shrink = math.clamp(dist / Config.PICKUP.MAGNET_RANGE, 0.25, 1)
 					p.part.Size = Vector3.new(p.baseSize, p.baseSize, p.baseSize) * shrink
 				end
 			end
 		else
-			local owner = nearestMothershipInMagnet(p.part.Position)
-			if owner then
-				p.flyingTo = owner.ownerId
-			end
+			local part, ownerId = nearestAttractorInMagnet(p.part.Position)
+			if part then p.flyingTo = ownerId; p.flyPart = part end
 		end
 	end
 end

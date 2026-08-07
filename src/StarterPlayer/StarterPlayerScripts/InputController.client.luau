@@ -61,10 +61,10 @@ local GHOST_SIZE = {
 -------------------------------------------------------------------------------
 -- Con trỏ -> world-point trên mặt map (Y = 0)
 -------------------------------------------------------------------------------
-local function cursorWorldPoint()
+local function cursorWorldPoint(screenPos)
 	local cam = Workspace.CurrentCamera
 	if not cam then return nil end
-	local mp = UserInputService:GetMouseLocation()
+	local mp = screenPos or UserInputService:GetMouseLocation()
 	local ray = cam:ScreenPointToRay(mp.X, mp.Y)
 	local dirY = ray.Direction.Y
 	if math.abs(dirY) < 1e-6 then return nil end
@@ -105,15 +105,16 @@ local function exitBuildMode()
 end
 
 ClientBus.enterBuild.Event:Connect(enterBuildMode)
+ClientBus.cancelBuild.Event:Connect(function() if buildMode then exitBuildMode() end end)
 
 -------------------------------------------------------------------------------
 -- Raycast tìm building dưới con trỏ (để nâng cấp)
 -------------------------------------------------------------------------------
-local function buildingUnderCursor()
+local function buildingUnderCursor(screenPos)
 	local cam = Workspace.CurrentCamera
 	local bf = Workspace:FindFirstChild("Buildings")
 	if not cam or not bf then return nil end
-	local mp = UserInputService:GetMouseLocation()
+	local mp = screenPos or UserInputService:GetMouseLocation()
 	local ray = cam:ScreenPointToRay(mp.X, mp.Y)
 	local params = RaycastParams.new()
 	params.FilterType = Enum.RaycastFilterType.Include
@@ -136,8 +137,13 @@ UserInputService.InputBegan:Connect(function(input, gameProcessed)
 			if pt then Remotes.PlaceBuilding:FireServer(buildMode, pt) end
 			exitBuildMode() -- đặt xong -> ghost biến mất ngay (muốn xây tiếp: bấm Q/R lại)
 		else
-			-- Click building của mình -> mở panel Nâng cấp/Bán (HUD lo); click ra ngoài -> bỏ chọn.
-			ClientBus.selectBuilding:Fire(buildingUnderCursor())
+			local bpart = buildingUnderCursor()
+			if bpart and bpart:GetAttribute("OwnerUserId") == player.UserId then
+				ClientBus.selectBuilding:Fire(bpart) -- nhà MÌNH -> panel Nâng cấp/Bán
+			else
+				-- Nhà ĐỊCH / đất trống -> đóng panel; tấn công = lái Tàu Mẹ tới (trỏ chuột).
+				ClientBus.selectBuilding:Fire(nil)
+			end
 		end
 		return
 	elseif input.UserInputType == Enum.UserInputType.MouseButton2 then
@@ -183,27 +189,85 @@ local accum = 0
 -- LOBBY: lái bằng WASD. Camera nhìn về -Z (cổng ở trước) nên W = -Z (tiến),
 -- S = +Z, A = -X, D = +X (trục thế giới, camera không xoay).
 local LOBBY_AHEAD = 45 -- gửi đích cách tàu bao xa theo hướng phím -> chạy liên tục khi giữ
--- Hướng WASD THEO CAMERA (W = tới theo góc nhìn hiện tại). Dùng IsKeyDown đọc PHÍM
--- VẬT LÝ nên KHÔNG bị bộ gõ Telex biến đổi; đang gõ trong ô ⚙ thì không lái.
-local function wasdDir()
-	if UserInputService:GetFocusedTextBox() then return Vector3.zero end
-	local kf = UserInputService:IsKeyDown(Enum.KeyCode.W)
-	local kb = UserInputService:IsKeyDown(Enum.KeyCode.S)
-	local kl = UserInputService:IsKeyDown(Enum.KeyCode.A)
-	local kr = UserInputService:IsKeyDown(Enum.KeyCode.D)
-	if not (kf or kb or kl or kr) then return Vector3.zero end
+
+-- Hướng THEO CAMERA từ (phải, tới): fwd*fwdAmt + rgt*rightAmt (đều flatten XZ).
+local function camDir(rightAmt, fwdAmt)
 	local cam = Workspace.CurrentCamera
 	if not cam then return Vector3.zero end
 	local fwd = Vector3.new(cam.CFrame.LookVector.X, 0, cam.CFrame.LookVector.Z)
 	fwd = (fwd.Magnitude > 1e-3) and fwd.Unit or Vector3.new(0, 0, -1)
 	local rgt = Vector3.new(cam.CFrame.RightVector.X, 0, cam.CFrame.RightVector.Z)
 	rgt = (rgt.Magnitude > 1e-3) and rgt.Unit or Vector3.new(1, 0, 0)
-	local move = Vector3.zero
-	if kf then move += fwd end
-	if kb then move -= fwd end
-	if kr then move += rgt end
-	if kl then move -= rgt end
-	return move
+	local d = fwd * fwdAmt + rgt * rightAmt
+	return (d.Magnitude > 0) and d.Unit or Vector3.zero
+end
+
+-- WASD (PC) -> hướng theo camera. IsKeyDown = phím vật lý (Telex-proof); không lái khi gõ ⚙.
+local function wasdDir()
+	if UserInputService:GetFocusedTextBox() then return Vector3.zero end
+	local x = (UserInputService:IsKeyDown(Enum.KeyCode.D) and 1 or 0) - (UserInputService:IsKeyDown(Enum.KeyCode.A) and 1 or 0)
+	local z = (UserInputService:IsKeyDown(Enum.KeyCode.W) and 1 or 0) - (UserInputService:IsKeyDown(Enum.KeyCode.S) and 1 or 0)
+	if x == 0 and z == 0 then return Vector3.zero end
+	return camDir(x, z)
+end
+
+-- ===== MOBILE (cảm ứng): joystick di chuyển + chạm để đặt/chọn nhà =====
+local isTouch = UserInputService.TouchEnabled
+local stickVec = Vector2.new(0, 0) -- hướng joystick (-1..1): X=phải, Y=tới
+if isTouch then
+	local pgui = player:WaitForChild("PlayerGui")
+	local tgui = Instance.new("ScreenGui")
+	tgui.Name = "TouchControls"; tgui.ResetOnSpawn = false; tgui.IgnoreGuiInset = true; tgui.Parent = pgui
+	local R = 70
+	local base = Instance.new("Frame")
+	base.AnchorPoint = Vector2.new(0.5, 0.5)
+	base.Position = UDim2.new(0, 130, 1, -130)
+	base.Size = UDim2.fromOffset(R * 2, R * 2)
+	base.BackgroundColor3 = Color3.fromRGB(20, 24, 34); base.BackgroundTransparency = 0.55
+	local bcn = Instance.new("UICorner"); bcn.CornerRadius = UDim.new(1, 0); bcn.Parent = base
+	base.Parent = tgui
+	local knob = Instance.new("Frame")
+	knob.AnchorPoint = Vector2.new(0.5, 0.5); knob.Position = UDim2.fromScale(0.5, 0.5)
+	knob.Size = UDim2.fromOffset(64, 64); knob.BackgroundColor3 = Color3.fromRGB(120, 170, 255); knob.BackgroundTransparency = 0.1
+	local kcn = Instance.new("UICorner"); kcn.CornerRadius = UDim.new(1, 0); kcn.Parent = knob
+	knob.Parent = base
+
+	local joyTouch = nil
+	local function baseCenter() return base.AbsolutePosition + base.AbsoluteSize / 2 end
+	UserInputService.InputBegan:Connect(function(input)
+		if input.UserInputType ~= Enum.UserInputType.Touch or joyTouch then return end
+		local d = Vector2.new(input.Position.X, input.Position.Y) - baseCenter()
+		if d.Magnitude <= R + 45 then joyTouch = input end -- chạm gần joystick -> điều khiển stick
+	end)
+	UserInputService.InputChanged:Connect(function(input)
+		if input ~= joyTouch or input.UserInputType ~= Enum.UserInputType.Touch then return end
+		local d = Vector2.new(input.Position.X, input.Position.Y) - baseCenter()
+		if d.Magnitude > R then d = d.Unit * R end
+		knob.Position = UDim2.new(0.5, d.X, 0.5, d.Y)
+		stickVec = Vector2.new(d.X / R, -d.Y / R)
+	end)
+	UserInputService.InputEnded:Connect(function(input)
+		if input == joyTouch then
+			joyTouch = nil; stickVec = Vector2.new(0, 0); knob.Position = UDim2.fromScale(0.5, 0.5)
+		end
+	end)
+
+	-- Chạm thế giới (không phải GUI) -> đặt nhà (đang build) / chọn nhà (trong trận).
+	UserInputService.TouchTapInWorld:Connect(function(pos, processedByUI)
+		if processedByUI or not playing then return end
+		if buildMode then
+			local pt = cursorWorldPoint(pos)
+			if pt then Remotes.PlaceBuilding:FireServer(buildMode, pt) end
+			exitBuildMode()
+		else
+			local bpart = buildingUnderCursor(pos)
+			if bpart and bpart:GetAttribute("OwnerUserId") == player.UserId then
+				ClientBus.selectBuilding:Fire(bpart)
+			else
+				ClientBus.selectBuilding:Fire(nil)
+			end
+		end
+	end)
 end
 
 -- Hover công trình -> viền sáng (Highlight).
@@ -262,7 +326,20 @@ RunService.RenderStepped:Connect(function(dt)
 	accum += dt
 	if accum >= SEND_INTERVAL then
 		accum = 0
-		if buildMode then
+		if isTouch then
+			-- MOBILE: lái bằng joystick (camera-relative). Build/mở UI nhà -> đứng yên.
+			local ship = getMyShip()
+			if ship then
+				if buildMode or player:GetAttribute("BuildingUIOpen") then
+					Remotes.MoveInput:FireServer(ship.Position)
+				elseif stickVec.Magnitude > 0.15 then
+					local reach = playing and (Config.MOTHERSHIP.MOVE_LEASH or 70) or LOBBY_AHEAD
+					Remotes.MoveInput:FireServer(ship.Position + camDir(stickVec.X, stickVec.Y) * reach)
+				else
+					Remotes.MoveInput:FireServer(ship.Position)
+				end
+			end
+		elseif buildMode then
 			-- Đang chọn chỗ xây -> giữ Tàu Mẹ ĐỨNG YÊN (gửi chính vị trí của nó)
 			local ship = getMyShip()
 			if ship then

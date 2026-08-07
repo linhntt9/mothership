@@ -14,4 +14,7 @@ ClientBus.enterBuild = Instance.new("BindableEvent")
 -- nil = bỏ chọn.
 ClientBus.selectBuilding = Instance.new("BindableEvent")
 
+-- Fire() để huỷ chế độ đặt building (nút ✕ trên mobile).
+ClientBus.cancelBuild = Instance.new("BindableEvent")
+
 return ClientBus

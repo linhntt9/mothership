@@ -62,6 +62,47 @@ UserInputService.InputEnded:Connect(function(input)
 	end
 end)
 
+-- ===== CẢM ỨNG (mobile) ở lobby: 1 ngón (nửa phải) kéo = xoay+pitch; 2 ngón = pinch zoom =====
+local touches = {}      -- [input] = Vector2 vị trí
+local camTouch = nil    -- ngón đang xoay
+local lastPinch = nil   -- khoảng cách 2 ngón lần trước
+local function touchCount() local n = 0 for _ in pairs(touches) do n += 1 end return n end
+UserInputService.InputBegan:Connect(function(input, gp)
+	if input.UserInputType ~= Enum.UserInputType.Touch then return end
+	touches[input] = Vector2.new(input.Position.X, input.Position.Y)
+	if playing or gp then return end
+	local cam = Workspace.CurrentCamera
+	local vpx = (cam and cam.ViewportSize.X) or 1000
+	if touchCount() == 1 and input.Position.X > vpx * 0.42 then camTouch = input end -- nửa phải = xoay
+end)
+UserInputService.InputChanged:Connect(function(input)
+	if input.UserInputType ~= Enum.UserInputType.Touch or not touches[input] then return end
+	local newp = Vector2.new(input.Position.X, input.Position.Y)
+	local old = touches[input]; touches[input] = newp
+	if playing then return end
+	local c = Config.LOBBY.CAM
+	if touchCount() >= 2 then
+		camTouch = nil
+		local a, b
+		for _, p in pairs(touches) do if not a then a = p else b = p end end
+		if a and b then
+			local d = (a - b).Magnitude
+			if lastPinch then lobbyZoom = math.clamp(lobbyZoom - (d - lastPinch) * 0.004, c.ZOOM_MIN, c.ZOOM_MAX) end
+			lastPinch = d
+		end
+	elseif input == camTouch then
+		local delta = newp - old
+		lobbyYaw -= delta.X * c.ROT_SENS
+		lobbyPitch = math.clamp(lobbyPitch + delta.Y * c.ROT_SENS, -0.75, 0.9)
+	end
+end)
+UserInputService.InputEnded:Connect(function(input)
+	if input.UserInputType ~= Enum.UserInputType.Touch then return end
+	touches[input] = nil
+	if input == camTouch then camTouch = nil end
+	if touchCount() < 2 then lastPinch = nil end
+end)
+
 local folder = Workspace:WaitForChild("Motherships")
 local myName = "Mothership_" .. player.UserId
 

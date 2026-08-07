@@ -16,6 +16,7 @@ local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Workspace = game:GetService("Workspace")
 local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
 
 local Config = require(ReplicatedStorage.Config)
 local Remotes = require(ReplicatedStorage.Remotes)
@@ -96,6 +97,62 @@ local defs = {
 	{ key = "Kamikaze",      kind = "buy",   label = "Kamikaze",  hotkey = "9", cost = BUY.Kamikaze.cost,      weight = BUY.Kamikaze.weight },
 }
 
+-- Mô tả ngắn cách hoạt động (hiện khi hover nút).
+local UDESC = {
+	Drone = "Rẻ, đông. Bia đỡ đạn vòng ngoài, che pháo.",
+	Frigate = "Bắn xa, xương sống DPS. Melt tank từ xa.",
+	Destroyer = "Tank trâu, chắn vòng giữa, mua thời gian.",
+	PlasmaCruiser = "Nổ AoE quanh mục tiêu — khắc swarm.",
+	Interceptor = "Nhanh nhất, ưu tiên xé pháo địch (backline).",
+	Battleship = "Flagship: trâu + bắn 3 mục tiêu cùng lúc.",
+	SiegeRailgun = "CHỈ phá công trình, tầm cực xa, nạp đạn chậm.",
+	Titan = "Sóng xung: STUN + đẩy lệch đội hình địch.",
+	Kamikaze = "Lao vào Tàu Mẹ/fleet địch rồi tự nổ AoE.",
+}
+local BDESC = {
+	ScrapMine = "Đặt trên mỏ → +scrap mỗi giây.",
+	DroneHub = "Nhà: +giới hạn quân (population).",
+	LaserSat = "Tháp phòng thủ bắn 1 mục tiêu.",
+	PlasmaSat = "Tháp phòng thủ bắn AoE.",
+}
+
+local tip = Instance.new("Frame")
+tip.Name = "Tooltip"
+tip.AnchorPoint = Vector2.new(0.5, 1)
+tip.Size = UDim2.new(0, 236, 0, 96)
+tip.BackgroundColor3 = Color3.fromRGB(18, 22, 32)
+tip.BackgroundTransparency = 0.05
+tip.Visible = false
+tip.ZIndex = 20
+local tipc = Instance.new("UICorner"); tipc.CornerRadius = UDim.new(0, 8); tipc.Parent = tip
+local tipPad = Instance.new("UIPadding")
+tipPad.PaddingTop = UDim.new(0, 8); tipPad.PaddingBottom = UDim.new(0, 8)
+tipPad.PaddingLeft = UDim.new(0, 10); tipPad.PaddingRight = UDim.new(0, 10); tipPad.Parent = tip
+local tipTxt = Instance.new("TextLabel")
+tipTxt.Size = UDim2.fromScale(1, 1); tipTxt.BackgroundTransparency = 1
+tipTxt.Font = Enum.Font.GothamMedium; tipTxt.TextSize = 14
+tipTxt.TextColor3 = Color3.fromRGB(235, 240, 250); tipTxt.TextWrapped = true
+tipTxt.TextXAlignment = Enum.TextXAlignment.Left; tipTxt.TextYAlignment = Enum.TextYAlignment.Top
+tipTxt.RichText = true; tipTxt.ZIndex = 21; tipTxt.Text = ""; tipTxt.Parent = tip
+tip.Parent = gui
+
+local function showTip(def, btn)
+	local body
+	if def.kind == "buy" then
+		local u = Config.UNITS[def.key]
+		body = ("<b>%s</b>  <font color='#ffd86e'>%d ◈</font>\nPop %d · HP %d · Dmg %d · Tầm %d%s\n<font color='#a8b4c8'>%s</font>"):format(
+			u.displayName, u.cost, u.weight, u.hp, u.dmg, u.range,
+			(u.aoeRadius or 0) > 0 and (" · AoE " .. u.aoeRadius) or "",
+			UDESC[def.key] or "")
+	else
+		body = ("<b>%s</b>  <font color='#ffd86e'>%d ◈</font>\n<font color='#a8b4c8'>%s</font>"):format(
+			def.label, def.cost, BDESC[def.key] or "")
+	end
+	tipTxt.Text = body
+	tip.Position = UDim2.fromOffset(btn.AbsolutePosition.X + btn.AbsoluteSize.X / 2, btn.AbsolutePosition.Y - 6)
+	tip.Visible = true
+end
+
 for i, def in ipairs(defs) do
 	local btn = Instance.new("TextButton")
 	btn.Name = def.key
@@ -118,7 +175,39 @@ for i, def in ipairs(defs) do
 		end
 	end)
 
+	btn.MouseEnter:Connect(function() showTip(def, btn) end)
+	btn.MouseLeave:Connect(function() tip.Visible = false end)
+
 	buttons[i] = { def = def, btn = btn }
+end
+
+-- ===== Nút cảm ứng (mobile): Split (giữ) + Huỷ xây =====
+if UserInputService.TouchEnabled then
+	local splitBtn = Instance.new("TextButton")
+	splitBtn.AnchorPoint = Vector2.new(1, 1)
+	splitBtn.Position = UDim2.new(1, -16, 1, -120)
+	splitBtn.Size = UDim2.new(0, 130, 0, 60)
+	splitBtn.BackgroundColor3 = Color3.fromRGB(120, 90, 210)
+	splitBtn.Font = Enum.Font.GothamBold; splitBtn.TextSize = 20
+	splitBtn.TextColor3 = Color3.fromRGB(255, 255, 255); splitBtn.Text = "⮂ Split"
+	local spc = Instance.new("UICorner"); spc.CornerRadius = UDim.new(0, 12); spc.Parent = splitBtn
+	splitBtn.Parent = gui
+	splitBtn.MouseButton1Down:Connect(function() Remotes.SplitInput:FireServer(true) end)
+	splitBtn.MouseButton1Up:Connect(function() Remotes.SplitInput:FireServer(false) end)
+
+	local cancelBtn = Instance.new("TextButton")
+	cancelBtn.AnchorPoint = Vector2.new(1, 1)
+	cancelBtn.Position = UDim2.new(1, -16, 1, -188)
+	cancelBtn.Size = UDim2.new(0, 130, 0, 52)
+	cancelBtn.BackgroundColor3 = Color3.fromRGB(150, 70, 70)
+	cancelBtn.Font = Enum.Font.GothamBold; cancelBtn.TextSize = 18
+	cancelBtn.TextColor3 = Color3.fromRGB(255, 255, 255); cancelBtn.Text = "✕ Huỷ xây"
+	local ccx = Instance.new("UICorner"); ccx.CornerRadius = UDim.new(0, 12); ccx.Parent = cancelBtn
+	cancelBtn.Parent = gui
+	cancelBtn.Activated:Connect(function()
+		ClientBus.cancelBuild:Fire()
+		Remotes.CancelBuild:FireServer()
+	end)
 end
 
 -- Bật/xám nút theo scrap + cap hiện tại
