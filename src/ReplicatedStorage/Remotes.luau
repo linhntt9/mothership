@@ -26,6 +26,8 @@ local EVENT_NAMES = {
 	"SpawnUnit",   -- (M1) client -> server: yêu cầu spawn 1 unit (debug, chưa tính scrap)
 	"FleetUpdate", -- (M1) server -> client: cập nhật used/max fleet cap để HUD hiển thị
 	"FireLaser",   -- (M2) server -> client: vẽ tia laser (origin, target, color)
+	"SiegeCharge", -- server -> client: telegraph nạp đạn Siege (origin, target, color, duration)
+	"Shockwave",   -- server -> client: VFX sóng xung Titan (center, radius, color)
 	"GameOver",    -- (M2) server -> client: kết thúc ván ("victory" | "defeat")
 	"DebugEnemy",  -- (M2) client -> server: spawn 1 hạm đội địch dummy để test combat
 	"Restart",     -- (M2) client -> server: reset ván chơi

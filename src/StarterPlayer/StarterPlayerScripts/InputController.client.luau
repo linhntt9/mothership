@@ -42,6 +42,11 @@ local SPAWN_KEYS = {
 	[Enum.KeyCode.Two]   = "Frigate",
 	[Enum.KeyCode.Three] = "Destroyer",
 	[Enum.KeyCode.Four]  = "PlasmaCruiser",
+	[Enum.KeyCode.Five]  = "Interceptor",
+	[Enum.KeyCode.Six]   = "Battleship",
+	[Enum.KeyCode.Seven] = "SiegeRailgun",
+	[Enum.KeyCode.Eight] = "Titan",
+	[Enum.KeyCode.Nine]  = "Kamikaze",
 }
 
 -- Kích cỡ ghost theo loại (khớp VISUAL bên BuildingSystem — chỉ để gợi ý)

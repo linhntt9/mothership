@@ -86,7 +86,7 @@ add("Mật độ cụm /100k (Chơi lại)", "PICKUP.CLUSTER_PER_100K")
 add("Cluster size (Chơi lại)", "PICKUP.CLUSTER_SIZE")
 
 -- Chỉ số từng loại quân (áp dụng cho quân spawn mới)
-for _, u in ipairs({ "Drone", "Frigate", "Destroyer", "PlasmaCruiser" }) do
+for _, u in ipairs({ "Drone", "Frigate", "Destroyer", "PlasmaCruiser", "Interceptor", "Battleship", "SiegeRailgun", "Titan", "Kamikaze" }) do
 	add("— " .. u .. " —", nil)
 	for _, stat in ipairs({ "cost", "hp", "dmg", "range", "fireRate", "speed", "weight", "aoeRadius" }) do
 		add(u .. "." .. stat, "UNITS." .. u .. "." .. stat)

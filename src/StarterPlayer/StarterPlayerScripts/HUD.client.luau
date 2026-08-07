@@ -65,7 +65,7 @@ local bar = Instance.new("Frame")
 bar.Name = "Hotbar"
 bar.AnchorPoint = Vector2.new(0.5, 1)
 bar.Position = UDim2.new(0.5, 0, 1, -12)
-bar.Size = UDim2.new(0, 6 * 116, 0, 66)
+bar.Size = UDim2.new(0, 11 * 116, 0, 66)
 bar.BackgroundTransparency = 1
 bar.Parent = gui
 local layout = Instance.new("UIListLayout")
@@ -85,6 +85,11 @@ local defs = {
 	{ key = "Frigate",       kind = "buy",   label = "Frigate",   hotkey = "2", cost = BUY.Frigate.cost,       weight = BUY.Frigate.weight },
 	{ key = "Destroyer",     kind = "buy",   label = "Destroyer", hotkey = "3", cost = BUY.Destroyer.cost,     weight = BUY.Destroyer.weight },
 	{ key = "PlasmaCruiser", kind = "buy",   label = "Plasma",    hotkey = "4", cost = BUY.PlasmaCruiser.cost, weight = BUY.PlasmaCruiser.weight },
+	{ key = "Interceptor",   kind = "buy",   label = "Intercept", hotkey = "5", cost = BUY.Interceptor.cost,  weight = BUY.Interceptor.weight },
+	{ key = "Battleship",    kind = "buy",   label = "Battlesh",  hotkey = "6", cost = BUY.Battleship.cost,    weight = BUY.Battleship.weight },
+	{ key = "SiegeRailgun",  kind = "buy",   label = "Siege",     hotkey = "7", cost = BUY.SiegeRailgun.cost,  weight = BUY.SiegeRailgun.weight },
+	{ key = "Titan",         kind = "buy",   label = "Titan",     hotkey = "8", cost = BUY.Titan.cost,         weight = BUY.Titan.weight },
+	{ key = "Kamikaze",      kind = "buy",   label = "Kamikaze",  hotkey = "9", cost = BUY.Kamikaze.cost,      weight = BUY.Kamikaze.weight },
 }
 
 for i, def in ipairs(defs) do

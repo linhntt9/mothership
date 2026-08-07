@@ -167,11 +167,58 @@ local function shotBlockedByFleet(attackerPos, ship)
 	return false
 end
 
+-- Enemy unit gần nhất Ở MỘT RING cụ thể (dùng cho BACKLINE_SEEK).
+local function nearestEnemyUnitInRing(u, ringName)
+	local pos = u.part.Position
+	local best, bestD
+	for _, other in ipairs(GameState.units) do
+		if other.ownerId ~= u.ownerId and other.ring == ringName and other.part and other.part.Parent then
+			local d = (other.part.Position - pos).Magnitude
+			if d <= u.range and (not bestD or d < bestD) then best, bestD = other, d end
+		end
+	end
+	return best
+end
+
+-- Tối đa `n` enemy UNIT gần nhất trong tầm (dùng cho MULTI_TARGET).
+local function nearestEnemyUnits(u, n)
+	local pos = u.part.Position
+	local list = {}
+	for _, other in ipairs(GameState.units) do
+		if other.ownerId ~= u.ownerId and other.part and other.part.Parent then
+			local d = (other.part.Position - pos).Magnitude
+			if d <= u.range then list[#list + 1] = { u = other, d = d } end
+		end
+	end
+	table.sort(list, function(a, b) return a.d < b.d end)
+	local out = {}
+	for i = 1, math.min(n, #list) do out[i] = list[i].u end
+	return out
+end
+
 -- Tìm mục tiêu tốt nhất cho 1 unit theo ưu tiên + gần nhất trong tầm.
 local function findTarget(u)
 	local pos = u.part.Position
 	local myOwner = u.ownerId
 	local range = u.range
+
+	-- BUILDING_ONLY (Siege): chỉ nhắm enemy Building, bỏ qua Unit & Mothership.
+	if u.targeting == "BUILDING_ONLY" then
+		local best, bestD
+		for _, b in ipairs(GameState.buildings) do
+			if b.ownerId ~= myOwner and b.part and b.part.Parent then
+				local d = (b.part.Position - pos).Magnitude
+				if d <= range and (not bestD or d < bestD) then best, bestD = b, d end
+			end
+		end
+		return best
+	end
+
+	-- BACKLINE_SEEK: ưu tiên pháo địch ở CORE; không có thì rơi về STANDARD.
+	if u.targeting == "BACKLINE_SEEK" then
+		local core = nearestEnemyUnitInRing(u, "CORE")
+		if core then return core end
+	end
 
 	local best, bestDist
 
@@ -239,11 +286,66 @@ local function fireEntity(attacker, dt)
 	local part = attacker.part
 	if not part or not part.Parent then return end
 
+	-- Bước 3b: Kamikaze không bắn (chỉ lao va chạm) -> CombatSystem lo riêng.
+	if attacker.attack == "COLLISION" then return end
+
+	-- Bước 3a: đang bị STUN -> không bắn (mọi kiểu: hitscan/multi/charge).
+	if attacker.stunnedUntil and os.clock() < attacker.stunnedUntil then return end
+
 	attacker.cooldown = math.max(0, (attacker.cooldown or 0) - dt)
+
+	-- Đang NẠP ĐẠN (telegraph): đếm lùi rồi mới bắn phát chốt.
+	if attacker.charging then
+		attacker.chargeLeft -= dt
+		if attacker.chargeLeft > 0 then return end
+		attacker.charging = false
+		local t = attacker.chargeTarget
+		attacker.chargeTarget = nil
+		-- Re-validate: mục tiêu còn tồn tại + trong tầm (có thể bị phá/đi xa giữa chừng).
+		if t and t.part and t.part.Parent
+			and (t.part.Position - part.Position).Magnitude <= attacker.range then
+			local owner = GameState.motherships[attacker.ownerId]
+			local color = (owner and owner.teamColor) or Color3.new(1, 1, 1)
+			damageEntity(t, attacker.dmg, attacker.ownerId)
+			Remotes.FireLaser:FireAllClients(part.Position, t.part.Position, color)
+		end
+		attacker.cooldown = 1 / attacker.fireRate
+		return
+	end
+
 	if attacker.cooldown > 0 then return end
+
+	-- MULTI_TARGET: bắn tối đa 3 enemy UNIT gần nhất cùng lúc (mỗi con đủ dmg).
+	if attacker.targeting == "MULTI_TARGET" then
+		local targets = nearestEnemyUnits(attacker, 3)
+		if #targets > 0 then
+			local owner = GameState.motherships[attacker.ownerId]
+			local color = (owner and owner.teamColor) or Color3.new(1, 1, 1)
+			local origin = part.Position
+			for _, t in ipairs(targets) do
+				local tpos = t.part.Position
+				damageEntity(t, attacker.dmg, attacker.ownerId)
+				Remotes.FireLaser:FireAllClients(origin, tpos, color)
+			end
+			attacker.cooldown = 1 / attacker.fireRate
+			return
+		end
+		-- không có enemy unit -> rơi xuống single-target (building/mothership) bên dưới
+	end
 
 	local target = findTarget(attacker)
 	if not target then return end
+
+	-- Telegraph: unit có chargeTime (Siege) -> bắt đầu NẠP ĐẠN thay vì bắn ngay.
+	if (attacker.chargeTime or 0) > 0 then
+		attacker.charging = true
+		attacker.chargeLeft = attacker.chargeTime
+		attacker.chargeTarget = target
+		local o = GameState.motherships[attacker.ownerId]
+		local col = (o and o.teamColor) or Color3.new(1, 1, 1)
+		Remotes.SiegeCharge:FireAllClients(part.Position, target.part.Position, col, attacker.chargeTime)
+		return
+	end
 
 	local owner = GameState.motherships[attacker.ownerId]
 	local color = (owner and owner.teamColor) or Color3.new(1, 1, 1)
@@ -259,7 +361,130 @@ local function fireEntity(attacker, dt)
 	attacker.cooldown = 1 / attacker.fireRate
 end
 
+-- Bước 3a — GRAVITY_STUN: mỗi 1/fireRate giây, Titan phát sóng xung quanh nó:
+-- STUN (refresh, không cộng dồn) + đẩy lệch slot mọi enemy UNIT trong bán kính.
+-- Chỉ ảnh hưởng enemy Unit (không Building/Mothership); không friendly fire.
+local function updateShockwaves(dt)
+	for _, u in ipairs(GameState.units) do
+		if u.special == "GRAVITY_STUN" and u.part and u.part.Parent then
+			u.shockCd = (u.shockCd or 0) - dt
+			if u.shockCd <= 0 then
+				u.shockCd = 1 / u.fireRate
+				local center = u.part.Position
+				local radius = u.stunRadius or 18
+				for _, other in ipairs(GameState.units) do
+					if other.ownerId ~= u.ownerId and other.part and other.part.Parent then
+						if (other.part.Position - center).Magnitude <= radius then
+							other.stunnedUntil = os.clock() + (u.stunDuration or 1.5) -- refresh
+							local dir = Util.flatDir(center, other.part.Position)
+							if dir ~= Vector3.zero then
+								other.pushOffset = dir * (u.pushStrength or 10)
+							end
+						end
+					end
+				end
+				local owner = GameState.motherships[u.ownerId]
+				local color = (owner and owner.teamColor) or Color3.new(1, 1, 1)
+				Remotes.Shockwave:FireAllClients(center, radius, color)
+			end
+		end
+	end
+end
+
+-- Bước 3b — KAMIKAZE: ngoại lệ formation duy nhất. Bình thường bay SCREEN; khi có
+-- Mothership/fleet địch vào arm range -> rời quỹ đạo lao thẳng (ưu tiên Mothership),
+-- chạm ~KAMI_COLLIDE thì nổ AoE trúng mọi Mothership/fleet địch quanh đó rồi tự huỷ.
+-- KHÔNG đụng Building; không friendly fire. hp thấp nên bị bắn rơi trước khi chạm.
+local KAMI_COLLIDE = 3
+
+local function nearestEnemyMothershipInRange(u, rng)
+	local pos = u.part.Position
+	local best, bd
+	for _, e in pairs(GameState.motherships) do
+		if e.ownerId ~= u.ownerId and e.alive and e.part then
+			local d = (e.part.Position - pos).Magnitude
+			if d <= rng and (not bd or d < bd) then best, bd = e, d end
+		end
+	end
+	return best
+end
+
+local function nearestEnemyUnitInRange(u, rng)
+	local pos = u.part.Position
+	local best, bd
+	for _, o in ipairs(GameState.units) do
+		if o ~= u and o.ownerId ~= u.ownerId and o.part and o.part.Parent then
+			local d = (o.part.Position - pos).Magnitude
+			if d <= rng and (not bd or d < bd) then best, bd = o, d end
+		end
+	end
+	return best
+end
+
+local function explodeKamikaze(u)
+	local center = u.part.Position
+	local ownerId = u.ownerId
+	local r = u.aoe or 6
+	-- Gom enemy UNIT + MOTHERSHIP trong bán kính nổ (KHÔNG building, không phe mình).
+	local hits = {}
+	for _, o in ipairs(GameState.units) do
+		if o ~= u and o.ownerId ~= ownerId and o.part and o.part.Parent
+			and (o.part.Position - center).Magnitude <= r then
+			hits[#hits + 1] = o
+		end
+	end
+	for _, e in pairs(GameState.motherships) do
+		if e.ownerId ~= ownerId and e.alive and e.part
+			and (e.part.Position - center).Magnitude <= r then
+			hits[#hits + 1] = e
+		end
+	end
+	for _, ent in ipairs(hits) do
+		damageEntity(ent, u.dmg, ownerId)
+	end
+	local owner = GameState.motherships[ownerId]
+	local color = (owner and owner.teamColor) or Color3.new(1, 1, 1)
+	Remotes.Shockwave:FireAllClients(center, r, color) -- dùng lại VFX cầu nổ
+	if u.part then u.part:Destroy() end
+end
+
+local function updateKamikazes(dt)
+	for _, u in ipairs(GameState.units) do
+		if u.special == "KAMIKAZE" and u.part and u.part.Parent then
+			local rng = u.armRange or 45
+			if not u.armed then
+				local tgt = nearestEnemyMothershipInRange(u, rng) or nearestEnemyUnitInRange(u, rng)
+				if tgt then u.armed = true; u.kamiTarget = tgt end
+			else
+				-- Mục tiêu chết/mất giữa đường -> re-acquire; không có thì về formation.
+				local t = u.kamiTarget
+				if not (t and t.part and t.part.Parent) then
+					t = nearestEnemyMothershipInRange(u, rng) or nearestEnemyUnitInRange(u, rng)
+					u.kamiTarget = t
+					if not t then u.armed = false end
+				end
+				if u.armed and u.kamiTarget then
+					local pos = u.part.Position
+					local tp = u.kamiTarget.part.Position
+					local dir = Util.flatDir(pos, tp)
+					local dist = Util.flatDist(pos, tp)
+					if dist <= KAMI_COLLIDE then
+						explodeKamikaze(u)
+					elseif dir ~= Vector3.zero then
+						local np = pos + dir * math.min(u.speed * dt, dist)
+						np = Vector3.new(np.X, pos.Y, np.Z)
+						u.part.CFrame = CFrame.lookAt(np, np + dir)
+					end
+				end
+			end
+		end
+	end
+end
+
 local function updateCombat(dt)
+	updateShockwaves(dt)
+	updateKamikazes(dt)
+
 	-- Units bắn
 	for _, u in ipairs(GameState.units) do
 		fireEntity(u, dt)

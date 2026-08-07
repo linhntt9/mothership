@@ -45,6 +45,15 @@ local VISUAL = {
 	Frigate       = { class = "Part", shape = Enum.PartType.Block, size = Vector3.new(2.6, 1.4, 5.8), material = Enum.Material.Metal },
 	Destroyer     = { class = "Part", shape = Enum.PartType.Ball,  size = Vector3.new(7.4, 3.2, 7.4), material = Enum.Material.Metal },
 	PlasmaCruiser = { class = "Part", shape = Enum.PartType.Ball,  size = Vector3.new(5.2, 5.2, 5.2), material = Enum.Material.Neon },
+	-- Bước 1
+	Interceptor   = { class = "WedgePart", size = Vector3.new(2.8, 1.4, 5.4), material = Enum.Material.Neon },      -- dart mảnh, nhanh
+	Battleship    = { class = "Part", shape = Enum.PartType.Block, size = Vector3.new(6.0, 3.0, 11.0), material = Enum.Material.Metal }, -- chiến hạm to
+	-- Bước 2
+	SiegeRailgun  = { class = "Part", shape = Enum.PartType.Block, size = Vector3.new(2.2, 2.2, 9.0), material = Enum.Material.Metal }, -- nòng pháo dài
+	-- Bước 3a
+	Titan         = { class = "Part", shape = Enum.PartType.Ball,  size = Vector3.new(9.5, 4.5, 9.5), material = Enum.Material.Metal }, -- khối CC to
+	-- Bước 3b
+	Kamikaze      = { class = "WedgePart", size = Vector3.new(2.4, 1.4, 3.6), material = Enum.Material.Neon }, -- dart nhỏ suicide
 }
 
 -- Fleet cap tối đa của 1 owner = BASE_CAP + tổng bonus của các Drone Hub sở hữu.
@@ -139,6 +148,13 @@ function FleetSystem.spawnUnit(ownerId, unitType, ignoreCap)
 		attack = stats.attack or "HITSCAN",       -- (Bước 3: COLLISION cho Kamikaze)
 		targeting = stats.targeting or "STANDARD", -- (Bước 1-3: kiểu nhắm riêng)
 		special = stats.special,                   -- (Bước 3: GRAVITY_STUN | KAMIKAZE)
+		chargeTime = stats.chargeTime,             -- (Bước 2: telegraph nạp đạn Siege)
+		-- Bước 3a — tham số CC (chỉ Titan có); pushOffset/stunnedUntil set lúc bị đánh.
+		stunRadius = stats.stunRadius,
+		stunDuration = stats.stunDuration,
+		pushStrength = stats.pushStrength,
+		-- Bước 3b — Kamikaze; armed/kamiTarget set khi lao.
+		armRange = stats.armRange,
 		cooldown = 0,           -- đếm lùi tới lần bắn kế
 	}
 	table.insert(GameState.units, unit)
@@ -175,6 +191,13 @@ end
 local function steerUnit(u, target, faceDir, dt)
 	local part = u.part
 	local pos = part.Position
+	-- Bước 3a — bị Titan đẩy: cộng offset vào đích rồi cho offset tan dần -> unit
+	-- steer ra rồi TỰ về slot mượt (không teleport).
+	if u.pushOffset then
+		target = target + u.pushOffset
+		u.pushOffset = u.pushOffset:Lerp(Vector3.zero, 1 - math.exp(-dt / 0.35))
+		if u.pushOffset.Magnitude < 0.3 then u.pushOffset = nil end
+	end
 	local delta = target - pos
 	local dist = delta.Magnitude
 	local newPos = pos
@@ -274,11 +297,14 @@ local function updateFormation(dt)
 	-- Góc quay chung, chậm -> cả hạm đội "sống"
 	globalTheta = (globalTheta + Config.FLEET.ORBIT_SPIN * dt) % (2 * math.pi)
 
-	-- Gom unit theo owner (giữ thứ tự list -> slot ổn định, không giật)
+	-- Gom unit theo owner (giữ thứ tự list -> slot ổn định, không giật).
+	-- BỎ QUA Kamikaze đã kích hoạt (u.armed): nó rời formation, CombatSystem tự lái.
 	local groups = {}
 	for _, u in ipairs(GameState.units) do
-		groups[u.ownerId] = groups[u.ownerId] or {}
-		table.insert(groups[u.ownerId], u)
+		if not u.armed then
+			groups[u.ownerId] = groups[u.ownerId] or {}
+			table.insert(groups[u.ownerId], u)
+		end
 	end
 
 	local rampRate = Config.FLEET.SPLIT_DIST / Config.FLEET.SPLIT_RAMP -- studs/s
@@ -335,7 +361,7 @@ local function separationPass()
 	local grid = {}
 	for _, u in ipairs(units) do
 		local part = u.part
-		if part and part.Parent then
+		if part and part.Parent and not u.armed then -- Kamikaze đang lao: không xô đẩy
 			local p = part.Position
 			local kx = math.floor(p.X / SEP_CELL)
 			local kz = math.floor(p.Z / SEP_CELL)
@@ -382,7 +408,7 @@ local function separationPass()
 	-- Áp lực đẩy (kẹp để không giật)
 	for _, u in ipairs(units) do
 		local part = u.part
-		if part and part.Parent and (u._sx ~= 0 or u._sz ~= 0) then
+		if part and part.Parent and not u.armed and (u._sx ~= 0 or u._sz ~= 0) then
 			local mag = math.sqrt(u._sx * u._sx + u._sz * u._sz)
 			if mag > maxPush then
 				u._sx = u._sx / mag * maxPush

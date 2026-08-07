@@ -155,6 +155,47 @@ Config.UNITS = {
 		ring = "CORE", weight = 8, aoeRadius = 12,
 		attack = "HITSCAN", targeting = "STANDARD",
 	},
+	-- Bước 1 — biến thể targeting riêng (dùng chung khung hitscan):
+	Interceptor = {
+		displayName = "Interceptor",
+		cost = 250, hp = 90, dmg = 12, range = 22, fireRate = 1.6, speed = 70,
+		ring = "SCREEN", weight = 1, aoeRadius = 0,
+		attack = "HITSCAN", targeting = "BACKLINE_SEEK", -- ưu tiên pháo địch ở CORE
+	},
+	Battleship = {
+		displayName = "Battleship",
+		cost = 3000, hp = 900, dmg = 35, range = 34, fireRate = 1.0, speed = 24,
+		ring = "GUARD", weight = 5, aoeRadius = 0,
+		attack = "HITSCAN", targeting = "MULTI_TARGET", -- bắn tối đa 3 unit gần nhất
+	},
+	-- Bước 2 — pháo công thành: CHỈ bắn Building, tầm xa nhất, bắn chậm có nạp đạn.
+	SiegeRailgun = {
+		displayName = "Siege",
+		cost = 3000, hp = 150, dmg = 120, range = 60, fireRate = 0.25, speed = 20,
+		ring = "CORE", weight = 3, aoeRadius = 0,
+		attack = "HITSCAN", targeting = "BUILDING_ONLY",
+		chargeTime = 0.5, -- telegraph: nạp đạn 0.5s trước khi bắn
+	},
+	-- Bước 3a — CC: mỗi 1/fireRate giây phát sóng xung STUN + đẩy lệch đội hình địch.
+	-- Sát thương thấp là chủ đích; giá trị nằm ở khống chế.
+	Titan = {
+		displayName = "Titan",
+		cost = 2500, hp = 700, dmg = 15, range = 20, fireRate = 0.5, speed = 20,
+		ring = "GUARD", weight = 4, aoeRadius = 0,
+		attack = "HITSCAN", targeting = "STANDARD", special = "GRAVITY_STUN",
+		stunRadius = 18,    -- bán kính sóng xung
+		stunDuration = 1.5, -- giây địch không bắn được (refresh, không cộng dồn)
+		pushStrength = 10,  -- studs đẩy lệch khỏi slot (rồi lerp về, không teleport)
+	},
+	-- Bước 3b — suicide: rời formation lao vào Mothership/fleet địch rồi nổ AoE.
+	-- KHÔNG đụng Building. hp thấp -> bị bắn rơi trước khi chạm = counter chính.
+	Kamikaze = {
+		displayName = "Kamikaze",
+		cost = 150, hp = 30, dmg = 200, range = 6, fireRate = 1, speed = 65,
+		ring = "SCREEN", weight = 1, aoeRadius = 6, -- aoeRadius = bán kính nổ
+		attack = "COLLISION", targeting = "MOTHERSHIP_FLEET_ONLY", special = "KAMIKAZE",
+		armRange = 45, -- Mothership/fleet địch vào tầm này -> rời quỹ đạo, lao thẳng
+	},
 }
 
 -------------------------------------------------------------------------------
