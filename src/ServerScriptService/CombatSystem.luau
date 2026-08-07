@@ -40,12 +40,45 @@ local function anyEnemyAlive()
 	return false
 end
 
--- Xử lý Tàu Mẹ chết -> loại khỏi ván + phát GameOver.
+-- Tên hiển thị của 1 chủ (player -> tên tài khoản; bot -> "Bot N" theo id âm).
+local function displayName(ownerId)
+	if not ownerId then return nil end
+	if ownerId < 0 then return "Bot " .. tostring(-ownerId) end
+	local p = Players:GetPlayerByUserId(ownerId)
+	return Config.PLAYER_PREFIX .. ((p and p.Name) or "Player")
+end
+
+-- Thống kê lúc chết/thắng để hiện lên bảng kết thúc.
+local function statsFor(ent)
+	local fleet = 0
+	for _, u in ipairs(GameState.units) do
+		if u.ownerId == ent.ownerId then fleet += 1 end
+	end
+	local survived = ent.spawnTime and (os.clock() - ent.spawnTime) or 0
+	local s = ent.stats or {}
+	return {
+		survived = math.floor(survived),
+		unitsKilled = s.unitsKilled or 0,
+		mothershipsKilled = s.mothershipsKilled or 0,
+		scrapSpent = math.floor(s.scrapSpent or 0),
+		unitsLost = s.unitsLost or 0,
+		gems = 0, -- nhận Gems cuối trận: Phase meta (3), tạm 0
+		fleet = fleet,
+	}
+end
+
+-- Xử lý Tàu Mẹ chết -> loại khỏi ván + phát GameOver (kèm killer + thống kê).
 local function killMothership(ent)
 	if not ent.alive then return end
 	ent.alive = false
 	local ownerId = ent.ownerId
 	local wasBot = ent.isBot
+	local killerName = displayName(ent.lastAttackerId)
+	local deadStats = statsFor(ent)
+
+	-- Ghi công cho kẻ hạ Tàu Mẹ này.
+	local killer = ent.lastAttackerId and GameState.motherships[ent.lastAttackerId]
+	if killer and killer.stats then killer.stats.mothershipsKilled += 1 end
 
 	if ent.part then ent.part:Destroy() end
 	GameState.motherships[ownerId] = nil
@@ -55,7 +88,11 @@ local function killMothership(ent)
 		-- Người chơi thua
 		local player = Players:GetPlayerByUserId(ownerId)
 		if player then
-			Remotes.GameOver:FireClient(player, "defeat")
+			Remotes.GameOver:FireClient(player, {
+				result = "defeat",
+				killer = killerName,
+				stats = deadStats,
+			})
 		end
 	else
 		-- 1 địch chết -> nếu hết địch thì mọi người chơi còn sống đều thắng
@@ -64,7 +101,10 @@ local function killMothership(ent)
 				if not e.isBot then
 					local p = Players:GetPlayerByUserId(e.ownerId)
 					if p then
-						Remotes.GameOver:FireClient(p, "victory")
+						Remotes.GameOver:FireClient(p, {
+							result = "victory",
+							stats = statsFor(e),
+						})
 					end
 				end
 			end
@@ -73,9 +113,10 @@ local function killMothership(ent)
 end
 
 -- Gây damage cho 1 entity (unit hoặc mothership) và xử lý chết.
-local function damageEntity(ent, amount)
+local function damageEntity(ent, amount, attackerOwner)
 	if ent.kind == "Mothership" then
 		if not ent.alive then return end
+		if attackerOwner then ent.lastAttackerId = attackerOwner end -- nhớ ai bắn phát cuối
 		ent.hp -= amount
 		MothershipSystem.updateHealthBar(ent)
 		if ent.hp <= 0 then
@@ -92,9 +133,38 @@ local function damageEntity(ent, amount)
 		if not ent.part or not ent.part.Parent then return end
 		ent.hp -= amount
 		if ent.hp <= 0 then
+			-- Thống kê: chủ unit +1 "quân mất", kẻ bắn +1 "địch hạ".
+			local victimOwner = GameState.motherships[ent.ownerId]
+			if victimOwner and victimOwner.stats then victimOwner.stats.unitsLost += 1 end
+			local killer = attackerOwner and GameState.motherships[attackerOwner]
+			if killer and killer.stats then killer.stats.unitsKilled += 1 end
 			ent.part:Destroy() -- FleetSystem.cleanup sẽ gỡ khỏi list + update HUD
 		end
 	end
+end
+
+-- Đường bắn từ `attackerPos` tới Tàu Mẹ `ship` có bị unit phe-thủ chắn ngang không?
+-- Chỉ chạy khi SHIP_GUARD bật. Một unit của chính chủ Tàu Mẹ được coi là "chắn" khi:
+--   - nằm GIỮA attacker và ship (tham số chiếu t trong khoảng (edge, 1-edge)), và
+--   - đủ sát đường bắn (khoảng cách vuông góc <= bán kính unit + lề).
+-- => fleet dày ở phía nào thì che phía đó; fleet thủng/chết thì đường bắn hở -> ship dính đạn.
+local function shotBlockedByFleet(attackerPos, ship)
+	local guard = Config.COMBAT.SHIP_GUARD
+	if not (guard and guard.ENABLED) then return false end
+	local shipPos = ship.part.Position
+	local edge = guard.EDGE_IGNORE or 0
+	for _, u in ipairs(GameState.units) do
+		if u.ownerId == ship.ownerId and u.part and u.part.Parent then
+			local perp, t = Util.flatPointSegment(u.part.Position, attackerPos, shipPos)
+			if t > edge and t < (1 - edge) then
+				local blockR = (u.radius or 2) + guard.BLOCK_MARGIN
+				if perp <= blockR then
+					return true
+				end
+			end
+		end
+	end
+	return false
 end
 
 -- Tìm mục tiêu tốt nhất cho 1 unit theo ưu tiên + gần nhất trong tầm.
@@ -127,12 +197,15 @@ local function findTarget(u)
 	end
 	if best then return best end
 
-	-- 3) enemy MOTHERSHIP
+	-- 3) enemy MOTHERSHIP — chỉ nhắm được nếu đường bắn KHÔNG bị fleet của nó chắn.
+	--    (Đây là "chắn thân": còn tường unit che giữa thì địch không chạm được Tàu Mẹ.)
 	for _, e in pairs(GameState.motherships) do
 		if e.ownerId ~= myOwner and e.alive and e.part then
 			local d = (e.part.Position - pos).Magnitude
 			if d <= range and (not bestDist or d < bestDist) then
-				best, bestDist = e, d
+				if not shotBlockedByFleet(pos, e) then
+					best, bestDist = e, d
+				end
 			end
 		end
 	end
@@ -157,7 +230,7 @@ local function applyAoe(centerPos, radius, attackerOwner, dmg, primary)
 		end
 	end
 	for _, ent in ipairs(hits) do
-		damageEntity(ent, dmg)
+		damageEntity(ent, dmg, attackerOwner)
 	end
 end
 
@@ -177,7 +250,7 @@ local function fireEntity(attacker, dt)
 	local origin = part.Position
 	local tpos = target.part.Position -- chốt vị trí trước khi target có thể bị huỷ
 
-	damageEntity(target, attacker.dmg)
+	damageEntity(target, attacker.dmg, attacker.ownerId)
 	if (attacker.aoe or 0) > 0 then
 		applyAoe(tpos, attacker.aoe, attacker.ownerId, attacker.dmg, target)
 	end

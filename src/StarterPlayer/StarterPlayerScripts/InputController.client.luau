@@ -25,6 +25,10 @@ local ClientBus = require(script.Parent.ClientBus)
 local player = Players.LocalPlayer
 local camera = Workspace.CurrentCamera
 
+-- Chỉ nhận input gameplay (mua/xây/split) khi ĐANG TRONG TRẬN. Ở lobby chỉ lái tàu.
+local playing = false
+Remotes.MatchState.OnClientEvent:Connect(function(s) playing = (s == "playing") end)
+
 -- Tìm Tàu Mẹ của mình (để giữ đứng yên khi đang chọn chỗ xây)
 local function getMyShip()
 	local folder = Workspace:FindFirstChild("Motherships")
@@ -115,6 +119,7 @@ end
 -------------------------------------------------------------------------------
 UserInputService.InputBegan:Connect(function(input, gameProcessed)
 	if gameProcessed then return end
+	if not playing then return end -- ở lobby: bỏ qua mua/xây/split (chỉ lái tàu)
 
 	-- Chuột
 	if input.UserInputType == Enum.UserInputType.MouseButton1 then
@@ -163,6 +168,18 @@ end)
 local SEND_INTERVAL = 0.1 -- 10Hz
 local accum = 0
 
+-- LOBBY: lái bằng WASD. Camera nhìn về -Z (cổng ở trước) nên W = -Z (tiến),
+-- S = +Z, A = -X, D = +X (trục thế giới, camera không xoay).
+local LOBBY_AHEAD = 45 -- gửi đích cách tàu bao xa theo hướng phím -> chạy liên tục khi giữ
+local function wasdDir()
+	local x, z = 0, 0
+	if UserInputService:IsKeyDown(Enum.KeyCode.W) then z -= 1 end
+	if UserInputService:IsKeyDown(Enum.KeyCode.S) then z += 1 end
+	if UserInputService:IsKeyDown(Enum.KeyCode.A) then x -= 1 end
+	if UserInputService:IsKeyDown(Enum.KeyCode.D) then x += 1 end
+	return Vector3.new(x, 0, z)
+end
+
 RunService.RenderStepped:Connect(function(dt)
 	local point = cursorWorldPoint()
 
@@ -182,8 +199,20 @@ RunService.RenderStepped:Connect(function(dt)
 			if ship then
 				Remotes.MoveInput:FireServer(ship.Position)
 			end
-		elseif point then
-			Remotes.MoveInput:FireServer(point)
+		elseif playing then
+			-- Trong trận: lái theo con trỏ chuột.
+			if point then Remotes.MoveInput:FireServer(point) end
+		else
+			-- Lobby: lái bằng WASD (giữ = tiến theo hướng phím, thả = dừng).
+			local ship = getMyShip()
+			if ship then
+				local dir = wasdDir()
+				if dir.Magnitude > 0 then
+					Remotes.MoveInput:FireServer(ship.Position + dir.Unit * LOBBY_AHEAD)
+				else
+					Remotes.MoveInput:FireServer(ship.Position)
+				end
+			end
 		end
 	end
 end)

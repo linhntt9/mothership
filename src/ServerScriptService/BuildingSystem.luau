@@ -112,6 +112,35 @@ end
 -------------------------------------------------------------------------------
 -- Dựng building (sau khi channel xong)
 -------------------------------------------------------------------------------
+-- Tên chủ (player: tên tài khoản; bot: "Bot N").
+local function displayName(ownerId)
+	if ownerId < 0 then return "Bot " .. tostring(-ownerId) end
+	local p = Players:GetPlayerByUserId(ownerId)
+	return Config.PLAYER_PREFIX .. ((p and p.DisplayName) or (p and p.Name) or "Player")
+end
+
+-- Bảng tên chủ nổi trên công trình (viền màu theo phe của chủ).
+local function attachOwnerName(part, text, teamColor, yOffset)
+	local bb = Instance.new("BillboardGui")
+	bb.Name = "OwnerName"
+	bb.Size = UDim2.new(0, 150, 0, 20)
+	bb.StudsOffsetWorldSpace = Vector3.new(0, yOffset, 0)
+	bb.AlwaysOnTop = true
+	bb.Adornee = part
+	bb.MaxDistance = 600
+	local l = Instance.new("TextLabel")
+	l.Size = UDim2.fromScale(1, 1)
+	l.BackgroundTransparency = 1
+	l.Font = Enum.Font.GothamBold
+	l.TextScaled = true
+	l.Text = text
+	l.TextColor3 = Color3.fromRGB(255, 255, 255)
+	local st = Instance.new("UIStroke"); st.Thickness = 2; st.Color = teamColor or Color3.fromRGB(20, 20, 20); st.Parent = l
+	local cap = Instance.new("UITextSizeConstraint"); cap.MaxTextSize = 15; cap.Parent = l
+	l.Parent = bb
+	bb.Parent = part
+end
+
 local function createBuilding(ownerId, buildingType, tier, position, node)
 	local v = VISUAL[buildingType]
 	local stats = tierTable(buildingType)[tier]
@@ -128,6 +157,11 @@ local function createBuilding(ownerId, buildingType, tier, position, node)
 	part.Parent = folder
 
 	local fill = attachHealthBar(part, v.size.Y / 2 + 3)
+
+	-- Tên chủ nổi phía trên thanh máu.
+	local owner = GameState.motherships[ownerId]
+	local teamColor = owner and owner.teamColor or Color3.fromRGB(200, 200, 200)
+	attachOwnerName(part, displayName(ownerId), teamColor, v.size.Y / 2 + 10)
 
 	local b = {
 		kind = "Building",

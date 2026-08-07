@@ -3,8 +3,9 @@
 	-----------------
 	Scrap rải rác + "mỏ" (cụm scrap) trên map, hút vào Tàu Mẹ khi tới gần.
 
-	- Khởi tạo: rải CLUSTER_COUNT "mỏ" (cụm dày, giá trị cao) + bù orb lẻ cho đủ
-	  TARGET_COUNT. Định kỳ respawn orb lẻ để map luôn có scrap.
+	- Khởi tạo: rải các "mỏ" (cụm dày, giá trị cao) + bù orb lẻ cho đủ mật độ.
+	  Số lượng = MẬT ĐỘ (Config.PICKUP.*_PER_100K) x diện tích map -> tự co giãn
+	  theo MAP.SIZE. Định kỳ respawn orb lẻ để map luôn có scrap.
 	- Mỗi Heartbeat:
 	    * orb chưa bị hút: nếu có Tàu Mẹ trong MAGNET_RANGE -> gán flyingTo.
 	    * orb đang bay: lerp về phía Tàu Mẹ (FLY_SPEED), nhỏ dần; tới COLLECT_DIST
@@ -20,11 +21,23 @@ local Config = require(ReplicatedStorage.Config)
 local Util = require(ReplicatedStorage.Util)
 local GameState = require(script.Parent.GameState)
 local EconomySystem = require(script.Parent.EconomySystem)
+local MatchState = require(script.Parent.MatchState)
 
 local PickupSystem = {}
 
 local folder
 local ORB_Y = 3 -- độ cao orb lơ lửng trên mặt map
+
+-- Số lượng scrap tính theo MẬT ĐỘ x DIỆN TÍCH map -> tự co giãn khi đổi MAP.SIZE.
+local function areaUnits()
+	return (Config.MAP.SIZE * Config.MAP.SIZE) / 100000 -- số "đơn vị 100k studs²"
+end
+local function targetOrbs()
+	return math.floor(areaUnits() * Config.PICKUP.SCRAP_PER_100K + 0.5)
+end
+local function clusterCount()
+	return math.max(0, math.floor(areaUnits() * Config.PICKUP.CLUSTER_PER_100K + 0.5))
+end
 
 local function randRange(a, b)
 	return a + math.random() * (b - a)
@@ -49,34 +62,78 @@ local function makeOrb(x, z, value)
 	table.insert(GameState.pickups, { part = orb, value = value, flyingTo = nil, baseSize = s })
 end
 
--- Rải 1 orb lẻ ở vị trí ngẫu nhiên trong map (chừa mép).
-local function spawnRandomOrb()
-	local half = Config.MAP.SIZE / 2 - 30
-	makeOrb(
-		math.random(-half, half),
-		math.random(-half, half),
-		math.floor(randRange(Config.PICKUP.VALUE_MIN, Config.PICKUP.VALUE_MAX))
-	)
+-- === RẢI ĐỀU (jittered grid / stratified) ===
+-- Chia map thành lưới ~N ô, mỗi ô 1 điểm ở giữa + lệch ngẫu nhiên trong ô. Phủ
+-- ĐỀU khắp map (không vón cục như random thuần) nhưng vẫn trông tự nhiên.
+local JITTER = 0.85 -- mức lệch trong ô (0 = đúng tâm ô/rất đều, 1 = tràn cả ô)
+
+local function gridCols(count)
+	return math.max(1, math.ceil(math.sqrt(math.max(1, count))))
 end
 
--- Rải 1 "mỏ": cụm orb giá trị cao quanh 1 tâm ngẫu nhiên.
-local function spawnCluster()
-	local half = Config.MAP.SIZE / 2 - 60
-	local cx, cz = math.random(-half, half), math.random(-half, half)
+-- Trả về `count` điểm {x,z} rải đều: xáo danh sách ô rồi lấy đủ count ô khắp map.
+local function evenPoints(count, margin)
+	local pts = {}
+	if count <= 0 then return pts end
+	local half = Config.MAP.SIZE / 2 - margin
+	local cols = gridCols(count)
+	local cell = (half * 2) / cols
+	local cells = {}
+	for gx = 0, cols - 1 do
+		for gz = 0, cols - 1 do
+			cells[#cells + 1] = { gx, gz }
+		end
+	end
+	for i = #cells, 2, -1 do -- xáo Fisher-Yates
+		local j = math.random(i)
+		cells[i], cells[j] = cells[j], cells[i]
+	end
+	for i = 1, math.min(count, #cells) do
+		local gx, gz = cells[i][1], cells[i][2]
+		pts[#pts + 1] = {
+			x = -half + (gx + 0.5) * cell + (math.random() - 0.5) * cell * JITTER,
+			z = -half + (gz + 0.5) * cell + (math.random() - 0.5) * cell * JITTER,
+		}
+	end
+	return pts
+end
+
+-- 1 điểm rải-đều ngẫu nhiên (dùng cho respawn lẻ): chọn 1 ô bất kỳ của lưới cỡ
+-- theo tổng orb rồi lệch trong ô -> respawn cũng trải đều, không dồn về 1 chỗ.
+local function evenPoint(margin, count)
+	local half = Config.MAP.SIZE / 2 - margin
+	local cols = gridCols(count)
+	local cell = (half * 2) / cols
+	local gx, gz = math.random(0, cols - 1), math.random(0, cols - 1)
+	return
+		-half + (gx + 0.5) * cell + (math.random() - 0.5) * cell * JITTER,
+		-half + (gz + 0.5) * cell + (math.random() - 0.5) * cell * JITTER
+end
+
+-- Rải 1 orb lẻ ở vị trí rải-đều (dùng cho respawn định kỳ).
+local function spawnRandomOrb()
+	local x, z = evenPoint(30, targetOrbs())
+	makeOrb(x, z, Config.PICKUP.VALUE)
+end
+
+-- Rải 1 "mỏ" (cụm orb dày) quanh 1 tâm cho trước.
+local function spawnClusterAt(cx, cz)
 	for _ = 1, Config.PICKUP.CLUSTER_SIZE do
 		local ox = randRange(-Config.PICKUP.CLUSTER_SPREAD, Config.PICKUP.CLUSTER_SPREAD)
 		local oz = randRange(-Config.PICKUP.CLUSTER_SPREAD, Config.PICKUP.CLUSTER_SPREAD)
-		makeOrb(cx + ox, cz + oz,
-			math.floor(randRange(Config.PICKUP.CLUSTER_VALUE_MIN, Config.PICKUP.CLUSTER_VALUE_MAX)))
+		makeOrb(cx + ox, cz + oz, Config.PICKUP.VALUE)
 	end
 end
 
 local function spawnInitial()
-	for _ = 1, Config.PICKUP.CLUSTER_COUNT do
-		spawnCluster()
+	-- Cụm: tâm rải ĐỀU trên lưới -> hết cảnh "chỗ nhiều cụm, chỗ không có".
+	for _, p in ipairs(evenPoints(clusterCount(), 60)) do
+		spawnClusterAt(p.x, p.z)
 	end
-	while #GameState.pickups < Config.PICKUP.TARGET_COUNT do
-		spawnRandomOrb()
+	-- Orb lẻ: rải đều cho đủ tổng mục tiêu.
+	local remaining = targetOrbs() - #GameState.pickups
+	for _, p in ipairs(evenPoints(remaining, 30)) do
+		makeOrb(p.x, p.z, Config.PICKUP.VALUE)
 	end
 end
 
@@ -148,17 +205,19 @@ function PickupSystem.init()
 	folder.Name = "Scrap"
 	folder.Parent = Workspace
 
-	spawnInitial()
+	-- KHÔNG rải scrap ở init: chỉ rải khi vào trận (Main gọi PickupSystem.reset).
 
 	RunService.Heartbeat:Connect(updatePickups)
 
-	-- Bù orb lẻ định kỳ để map luôn có scrap
+	-- Bù orb lẻ định kỳ — CHỈ khi đang trong trận (lobby không có scrap).
 	task.spawn(function()
 		while true do
 			task.wait(Config.PICKUP.RESPAWN_INTERVAL)
-			local need = Config.PICKUP.TARGET_COUNT - #GameState.pickups
-			for _ = 1, math.min(need, Config.PICKUP.RESPAWN_BATCH) do
-				spawnRandomOrb()
+			if MatchState.isPlaying() then
+				local need = targetOrbs() - #GameState.pickups
+				for _ = 1, math.min(need, Config.PICKUP.RESPAWN_BATCH) do
+					spawnRandomOrb()
+				end
 			end
 		end
 	end)

@@ -40,6 +40,11 @@ local EVENT_NAMES = {
 	"SetConfig",       -- (dev) client -> server: sửa 1 field số trong Config lúc chạy
 	"ConfigSync",      -- (dev) client xin / server trả bảng override đã lưu để hiển thị đúng
 	"Leaderboard",     -- (M5) server -> client: bảng xếp hạng {name, score, isPlayer}
+	"AddBot",          -- (dev) client -> server: sinh thêm 1 bot khi đang chơi
+	-- Vòng đời trận (Lobby)
+	"StartMatch",      -- client -> server: bấm Play ở lobby -> vào trận
+	"ToLobby",         -- client -> server: về lại lobby (từ bảng kết thúc)
+	"MatchState",      -- server -> client: "lobby" | "playing" (đổi màn)
 }
 
 local function getFolder()

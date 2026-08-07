@@ -23,6 +23,7 @@ local Config = require(ReplicatedStorage.Config)
 local Util = require(ReplicatedStorage.Util)
 local Remotes = require(ReplicatedStorage.Remotes)
 local GameState = require(script.Parent.GameState)
+local MatchState = require(script.Parent.MatchState)
 local MothershipSystem = require(script.Parent.MothershipSystem)
 local FleetSystem = require(script.Parent.FleetSystem)
 local EconomySystem = require(script.Parent.EconomySystem)
@@ -33,11 +34,17 @@ local BotSystem = {}
 local botStates = {} -- [ownerId(<0)] = { home, name, timer, state }
 
 -- Vị trí spawn bot (xa góc của người chơi ở dưới-trái) + màu riêng từng bot
-local BOT_SPAWNS = {
-	Vector3.new(200, Config.MOTHERSHIP.RADIUS, 200),
-	Vector3.new(200, Config.MOTHERSHIP.RADIUS, -200),
-	Vector3.new(-200, Config.MOTHERSHIP.RADIUS, 200),
-}
+-- Spawn bot ở 3 góc còn lại. Toạ độ tính LIVE trong spawnBots() (theo % nửa-map)
+-- nên đổi MAP.SIZE rồi Chơi lại là bot tự dãn ra góc mới, không rơi ra ngoài biên.
+local function botSpawns()
+	local s = (Config.MAP.SIZE / 2) * (Config.MAP.SPAWN_FRAC or 0.8)
+	local r = Config.MOTHERSHIP.RADIUS
+	return {
+		Vector3.new(s, r, s),
+		Vector3.new(s, r, -s),
+		Vector3.new(-s, r, s),
+	}
+end
 local BOT_COLORS = {
 	Color3.fromRGB(255, 80, 80),   -- đỏ
 	Color3.fromRGB(225, 120, 255), -- tím
@@ -188,7 +195,7 @@ local function nameOf(ownerId)
 		return botStates[ownerId] and botStates[ownerId].name or "Bot"
 	end
 	local p = Players:GetPlayerByUserId(ownerId)
-	return p and p.Name or "Player"
+	return Config.PLAYER_PREFIX .. (p and p.Name or "Player")
 end
 
 local function scoreOf(ownerId)
@@ -216,9 +223,10 @@ end
 -- Spawn / reset
 -------------------------------------------------------------------------------
 local function spawnBots()
+	local spawns = botSpawns()
 	for i = 1, Config.BOT_COUNT do
 		local id = -i
-		local pos = BOT_SPAWNS[i] or Vector3.new(0, Config.MOTHERSHIP.RADIUS, 0)
+		local pos = spawns[i] or Vector3.new(0, Config.MOTHERSHIP.RADIUS, 0)
 		local color = BOT_COLORS[i] or Config.TEAM.ENEMY
 		MothershipSystem.spawn(id, true, pos, color)
 		botStates[id] = {
@@ -230,13 +238,61 @@ local function spawnBots()
 	end
 end
 
+-- id âm chưa dùng tiếp theo (nhỏ hơn mọi id bot hiện có, kể cả bot đã chết còn
+-- lưu state) -> luôn duy nhất.
+local function nextBotId()
+	local m = 0
+	for id in pairs(botStates) do
+		if id < m then m = id end
+	end
+	return m - 1
+end
+
+-- Sinh THÊM 1 bot khi đang chơi (nút "Tạo bot" ở bảng ⚙). Bot mới tự tham gia
+-- vòng quyết định (loop đọc botStates) + leaderboard ngay.
+function BotSystem.addBot()
+	if not MatchState.isPlaying() then return false end -- chỉ tạo bot khi đang trong trận
+	local id = nextBotId()
+	local n = -id                       -- 1,2,3... dùng để đặt tên & chọn màu
+	local spawns = botSpawns()
+	local base = spawns[((n - 1) % #spawns) + 1]
+	-- lệch ngẫu nhiên để nhiều bot cùng góc không đè lên nhau
+	local pos = Util.clampToMap(
+		Vector3.new(base.X + math.random(-40, 40), Config.MOTHERSHIP.RADIUS, base.Z + math.random(-40, 40)),
+		Config.MAP.SIZE
+	)
+	local color = BOT_COLORS[n] or Color3.fromHSV(math.random(), 0.65, 1)
+
+	MothershipSystem.spawn(id, true, pos, color)
+	botStates[id] = {
+		home = pos,
+		name = "Bot " .. n,
+		timer = math.random() * Config.BOT.DECISION_INTERVAL,
+		state = "ECONOMY",
+	}
+	broadcastLeaderboard()
+	print(("[BotSystem] +1 bot (id %d)"):format(id))
+	return true
+end
+
 function BotSystem.reset()
 	table.clear(botStates)
 	spawnBots()
 end
 
+-- Chỉ dọn state bot (mothership bot đã bị MothershipSystem.clearAll huỷ) — dùng
+-- khi về lobby để không còn bot "ma" trong bảng quyết định.
+function BotSystem.clearAll()
+	table.clear(botStates)
+end
+
 function BotSystem.init()
-	spawnBots()
+	-- KHÔNG spawn bot ở init: bot chỉ có khi vào trận (Main gọi BotSystem.reset).
+
+	-- Nút "Tạo bot" ở bảng ⚙ -> sinh thêm 1 bot.
+	Remotes.AddBot.OnServerEvent:Connect(function()
+		BotSystem.addBot()
+	end)
 
 	RunService.Heartbeat:Connect(function(dt)
 		for id, st in pairs(botStates) do

@@ -58,4 +58,25 @@ function Util.flatDist(a, b)
 	return math.sqrt(dx * dx + dz * dz)
 end
 
+-- Chiếu điểm p lên đoạn thẳng a->b (mặt phẳng XZ) và trả về:
+--   perpDist : khoảng cách vuông góc từ p tới ĐƯỜNG thẳng ab
+--   t        : vị trí chiếu dọc đoạn, 0 = tại a, 1 = tại b (đã kẹp [0,1])
+-- Dùng cho "chắn thân": unit p chắn đường bắn a(attacker)->b(ship) khi perpDist nhỏ
+-- và t nằm trong khoảng giữa (không tính unit ở sau lưng attacker hoặc sau ship).
+function Util.flatPointSegment(p, a, b)
+	local abx, abz = b.X - a.X, b.Z - a.Z
+	local apx, apz = p.X - a.X, p.Z - a.Z
+	local lenSq = abx * abx + abz * abz
+	if lenSq < 1e-6 then
+		-- a và b trùng nhau -> "đoạn" là 1 điểm
+		return Util.flatDist(p, a), 0
+	end
+	local t = (apx * abx + apz * abz) / lenSq
+	t = Util.clamp(t, 0, 1)
+	-- điểm gần nhất trên đoạn
+	local cx, cz = a.X + abx * t, a.Z + abz * t
+	local dx, dz = p.X - cx, p.Z - cz
+	return math.sqrt(dx * dx + dz * dz), t
+end
+
 return Util

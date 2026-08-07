@@ -32,6 +32,8 @@ Players.CharacterAutoLoads = false
 -- Tạo remotes trước tiên
 local Remotes = require(ReplicatedStorage.Remotes)
 
+local MatchState = require(ServerScriptService.MatchState)
+local LobbySystem = require(ServerScriptService.LobbySystem)
 local MapSystem = require(ServerScriptService.MapSystem)
 local MothershipSystem = require(ServerScriptService.MothershipSystem)
 local FleetSystem = require(ServerScriptService.FleetSystem)
@@ -107,16 +109,70 @@ safeInit("PickupSystem", PickupSystem)
 safeInit("CombatSystem", CombatSystem)
 safeInit("BotSystem", BotSystem)
 
--- Restart: xoá sạch unit + building + mothership + reset scrap trên map, spawn lại.
-Remotes.Restart.OnServerEvent:Connect(function()
+-------------------------------------------------------------------------------
+-- VÒNG ĐỜI TRẬN (Lobby <-> Playing)
+-------------------------------------------------------------------------------
+local function broadcastState()
+	Remotes.MatchState:FireAllClients(MatchState.isPlaying() and "playing" or "lobby")
+end
+
+-- Dọn sạch mọi entity trận (dùng khi về lobby hoặc trước khi dựng trận mới).
+local function clearMatch()
 	FleetSystem.clearAll()
-	BuildingSystem.clearAll()
+	BuildingSystem.clearAll()   -- dọn building trước để giải phóng node mỏ
 	MothershipSystem.clearAll()
-	PickupSystem.reset()
+	BotSystem.clearAll()
+	PickupSystem.clearAll()
+end
+
+local function lobbyShipPos()
+	return Vector3.new(Config.LOBBY.SPAWN.X, Config.MOTHERSHIP.RADIUS, Config.LOBBY.SPAWN.Z)
+end
+
+-- Spawn Tàu Mẹ "lobby" cho mọi người chơi (bay quanh sảnh, không combat).
+local function spawnLobbyShips()
+	for _, p in ipairs(Players:GetPlayers()) do
+		MothershipSystem.spawn(p.UserId, false, lobbyShipPos(), Config.TEAM.PLAYER)
+	end
+end
+
+-- Bắt đầu / chơi lại trận: dọn sảnh -> dựng map + rải scrap + spawn Tàu Mẹ + bot.
+local function startMatch()
+	clearMatch()                    -- dọn tàu lobby + mọi entity
+	LobbySystem.clearHall()         -- gỡ sảnh 3D
+	MatchState.set("PLAYING")
+	MapSystem.rebuild()             -- dựng lại map theo số MAP hiện tại
+	PickupSystem.reset()            -- rải scrap theo MAP.SIZE + PICKUP
 	MothershipSystem.respawnPlayers()
-	BotSystem.reset()
-	print("[Main] Restart ván chơi.")
+	BotSystem.reset()               -- spawn bot
+	broadcastState()
+	print("[Main] Vào trận.")
+end
+
+-- Về / vào lobby: dọn trận -> gỡ arena -> dựng sảnh 3D -> spawn Tàu Mẹ lobby.
+local function enterLobby()
+	clearMatch()
+	MapSystem.clearAll()            -- gỡ arena (chỉ 1 cảnh tồn tại 1 lúc)
+	LobbySystem.buildHall()         -- dựng sảnh 3D
+	MatchState.set("LOBBY")
+	spawnLobbyShips()
+	broadcastState()
+	print("[Main] Vào lobby.")
+end
+
+Remotes.StartMatch.OnServerEvent:Connect(startMatch) -- bấm cổng "Vào trận" ở sảnh
+Remotes.Restart.OnServerEvent:Connect(startMatch)    -- "Chơi lại" ở bảng kết thúc
+Remotes.ToLobby.OnServerEvent:Connect(enterLobby)    -- "Lobby" ở bảng kết thúc
+
+-- Người vào server: gửi trạng thái + spawn Tàu Mẹ đúng cảnh (sảnh hoặc trận).
+Players.PlayerAdded:Connect(function(player)
+	Remotes.MatchState:FireClient(player, MatchState.isPlaying() and "playing" or "lobby")
+	local pos = MatchState.isPlaying() and MothershipSystem.playerSpawnPos() or lobbyShipPos()
+	MothershipSystem.spawn(player.UserId, false, pos, Config.TEAM.PLAYER)
 end)
+
+-- Boot: vào thẳng lobby (dọn arena mà MapSystem.init vừa dựng, thay bằng sảnh).
+enterLobby()
 
 -- DEV: sửa Config lúc chạy từ bảng config in-game + ghi nhận để LƯU.
 Remotes.SetConfig.OnServerEvent:Connect(function(player, path, value)

@@ -17,17 +17,22 @@ local Config = {}
 -- MAP
 -------------------------------------------------------------------------------
 Config.MAP = {
-	SIZE = 500,               -- baseplate 500 x 500 studs, tâm ở (0,0)
+	SIZE = 2500,              -- baseplate 2500 x 2500 studs, tâm ở (0,0) — map lớn (x5 so với proto 500)
 	-- MỎ (ore deposit): nơi DUY NHẤT đặt được Scrap Mine. Có hình dạng riêng
 	-- (tinh thể phát sáng) để phân biệt với mặt đất trống (chỗ đặt Hub).
-	ORE_DEPOSIT_COUNT = 5,     -- rất ít mỏ, rải rác thưa
-	ORE_DEPOSIT_MIN_GAP = 130, -- khoảng cách tối thiểu giữa 2 mỏ (studs) — rất thưa
+	ORE_DEPOSIT_COUNT = 24,    -- nhiều mỏ cho map lớn 2500 (proto 500 dùng 5)
+	ORE_DEPOSIT_MIN_GAP = 130, -- khoảng cách tối thiểu giữa 2 mỏ (studs)
 	ORE_DEPOSIT_RADIUS = 8,   -- bán kính "mặt" mỏ (dùng để snap & kiểm tra đặt mine)
-}
 
--- Vị trí spawn của người chơi: góc dưới-trái map (lưu dưới dạng x,z)
-Config.PLAYER_SPAWN = { X = -200, Z = -200 }
+	-- Spawn của player & bot nằm ở các GÓC map, cách tâm SPAWN_FRAC * nửa-map.
+	-- Server tính LIVE từ SIZE lúc spawn -> đổi SIZE rồi Chơi lại là spawn tự dãn
+	-- theo, không rơi ra ngoài biên. 0.8 = 80% về phía góc.
+	SPAWN_FRAC = 0.8,
+}
 Config.BOT_COUNT = 2
+
+-- Tiền tố danh hiệu gắn trước tên mọi người chơi (nameplate, leaderboard, bảng thua).
+Config.PLAYER_PREFIX = "[Captain] "
 
 -- Bot AI (M5)
 Config.BOT = {
@@ -40,10 +45,30 @@ Config.BOT = {
 }
 
 -------------------------------------------------------------------------------
+-- LOBBY (sảnh 3D: Tàu Mẹ bay quanh, vào vùng cổng để mở shop / vào trận)
+-------------------------------------------------------------------------------
+Config.LOBBY = {
+	SIZE = 300,                 -- sảnh vuông SIZE x SIZE; di chuyển Tàu Mẹ bị kẹp trong sảnh
+	SPAWN = { X = 0, Z = 100 }, -- Tàu Mẹ xuất hiện ở cửa sảnh (phía dưới)
+	ZONE_RADIUS = 30,           -- vào bán kính này quanh 1 cổng => mở shop/cổng đó
+	-- Camera sảnh: chếch từ SAU LƯNG nhìn tới (thấy cổng phía trước + chân trời),
+	-- khác camera top-down trong trận. Cổng nằm phía -Z nên "trước" = -Z, camera lùi +Z.
+	CAM = { HEIGHT = 42, BACK = 58, LOOK_AHEAD = 48, LOOK_UP = 10, ZOOM_MIN = 0.55, ZOOM_MAX = 2.0, ROT_SENS = 0.006 },
+	SHIP_SCALE = 1.9,                -- Tàu Mẹ ở lobby to hơn cho dễ nhìn/khoe skin
+	MOVE_MULT = 1.7,                 -- lobby lái nhanh/mượt hơn (nhân vào tốc độ nền)
+	-- Vị trí 3 cổng trong sảnh. id dùng cho client mở đúng panel.
+	ZONES = {
+		{ id = "class", label = "CLASS SHOP", x = -95, z = -15,  color = Color3.fromRGB(120, 170, 255) },
+		{ id = "skin",  label = "SKIN SHOP",  x = 95,  z = -15,  color = Color3.fromRGB(210, 130, 255) },
+		{ id = "gate",  label = "VÀO TRẬN",   x = 0,   z = -110, color = Color3.fromRGB(90, 220, 120) },
+	},
+}
+
+-------------------------------------------------------------------------------
 -- CAMERA (client)
 -------------------------------------------------------------------------------
 Config.CAMERA = {
-	HEIGHT = 155,       -- studs phía trên mothership (nhỏ = gần hơn)
+	HEIGHT = 100,       -- studs phía trên mothership (nhỏ = gần hơn)
 	TILT_OFFSET = 34,   -- lệch nhẹ theo trục Z để có góc nghiêng (0 = top-down thuần)
 }
 
@@ -92,37 +117,43 @@ Config.FLEET = {
 	SEPARATION_MAX = 4,        -- đẩy tối đa mỗi frame (studs) để không giật
 	SPLIT_DIST = 25,       -- khoảng tách tối đa của 2 cánh khi Split
 	SPLIT_RAMP = 0.4,      -- giây để tách/gộp mượt (ramp 0<->SPLIT_DIST)
-	RING = {               -- bán kính các vòng quỹ đạo
-		FRONT = 14,
-		BACK = 22,
-		OUTER = 30,
-	},
-	-- Weight phân hóa theo cost: rẻ = nhẹ, đắt = nặng.
-	-- (cost: Drone 40 / Frigate 350 / Destroyer 500 / Plasma 1000)
-	-- Ăn vào cap VÀ ghì tốc độ Tàu Mẹ -> quân đắt vừa chiếm nhiều ô vừa nặng hơn.
-	WEIGHT = {
-		Drone = 1,
-		Frigate = 3,
-		Destroyer = 5,
-		PlasmaCruiser = 8,
-	},
+	-- Vị trí vòng đội hình xếp theo RING của từng unit: CORE (trong) -> GUARD (giữa)
+	-- -> SCREEN (ngoài). Bán kính thực do INNER_RADIUS + RING_GAP nở đồng tâm ra
+	-- ngoài (≈ CORE 12 / GUARD 20 / SCREEN 28). weight & aoe nằm trong Config.UNITS.
 }
 
 -------------------------------------------------------------------------------
 -- UNITS (hitscan; unit KHÔNG rời formation — vừa bay quỹ đạo vừa bắn)
 -------------------------------------------------------------------------------
+-- Schema mỗi unit: displayName, cost, hp, dmg, range, fireRate, speed,
+--   ring (SCREEN|GUARD|CORE), weight, aoeRadius (0=đơn mục tiêu),
+--   attack (HITSCAN|COLLISION), targeting (STANDARD|BUILDING_ONLY|
+--   MOTHERSHIP_FLEET_ONLY|BACKLINE_SEEK|MULTI_TARGET), special (nil|GRAVITY_STUN|KAMIKAZE).
+-- Bước 0: 4 unit cũ giữ nguyên chỉ số, chỉ ĐỔI RING (tank ra GUARD, pháo vào CORE).
 Config.UNITS = {
 	Drone = {
-		cost = 40,  hp = 40,  dmg = 6,  range = 18, fireRate = 2.0, speed = 55, ring = "OUTER", aoe = 0,
+		displayName = "Drone",
+		cost = 40, hp = 40, dmg = 6, range = 18, fireRate = 2.0, speed = 55,
+		ring = "SCREEN", weight = 1, aoeRadius = 0,
+		attack = "HITSCAN", targeting = "STANDARD",
 	},
 	Frigate = {
-		cost = 350, hp = 120, dmg = 18, range = 40, fireRate = 1.2, speed = 32, ring = "BACK",  aoe = 0,
+		displayName = "Frigate",
+		cost = 350, hp = 120, dmg = 18, range = 40, fireRate = 1.2, speed = 32,
+		ring = "CORE", weight = 3, aoeRadius = 0,
+		attack = "HITSCAN", targeting = "STANDARD",
 	},
 	Destroyer = {
-		cost = 500, hp = 600, dmg = 20, range = 22, fireRate = 0.8, speed = 22, ring = "FRONT", aoe = 0,
+		displayName = "Destroyer",
+		cost = 500, hp = 600, dmg = 20, range = 22, fireRate = 0.8, speed = 22,
+		ring = "GUARD", weight = 5, aoeRadius = 0,
+		attack = "HITSCAN", targeting = "STANDARD",
 	},
 	PlasmaCruiser = {
-		cost = 1000, hp = 200, dmg = 30, range = 34, fireRate = 0.6, speed = 26, ring = "BACK", aoe = 12,
+		displayName = "Plasma",
+		cost = 1000, hp = 200, dmg = 30, range = 34, fireRate = 0.6, speed = 26,
+		ring = "CORE", weight = 8, aoeRadius = 12,
+		attack = "HITSCAN", targeting = "STANDARD",
 	},
 }
 
@@ -130,22 +161,22 @@ Config.UNITS = {
 -- SCRAP PICKUP (scrap rải rác + "mỏ" gom cụm, hút vào Tàu Mẹ)
 -------------------------------------------------------------------------------
 Config.PICKUP = {
-	TARGET_COUNT     = 70,   -- số orb scrap duy trì trên map
-	CLUSTER_COUNT    = 6,    -- số "mỏ" (cụm scrap dày) lúc khởi tạo
+	-- MẬT ĐỘ scrap: số lượng tính theo DIỆN TÍCH map (studs²) nên đổi MAP.SIZE là
+	-- scrap tự co/giãn giữ mật độ. Đơn vị: "trên mỗi 100.000 studs²".
+	-- (Map 2500 -> diện tích 6.25M -> 62.5 đơn vị: 5*62.5≈312 orb, 0.35*62.5≈22 cụm.)
+	SCRAP_PER_100K   = 5,    -- số orb scrap lẻ duy trì / 100k studs²
+	CLUSTER_PER_100K = 0.35, -- số "mỏ" (cụm scrap dày) / 100k studs²
 	CLUSTER_SIZE     = 7,    -- orb mỗi mỏ
 	CLUSTER_SPREAD   = 22,   -- bán kính rải orb trong 1 mỏ (studs)
 
-	VALUE_MIN        = 8,    -- giá trị orb lẻ
-	VALUE_MAX        = 20,
-	CLUSTER_VALUE_MIN = 18,  -- orb trong mỏ giàu hơn
-	CLUSTER_VALUE_MAX = 40,
+	VALUE            = 30,   -- chạm 1 orb scrap = +VALUE scrap (phẳng cho mọi orb, kể cả trong cụm)
 
 	MAGNET_RANGE     = 26,   -- Tàu Mẹ hút orb trong tầm này (studs)
 	COLLECT_DIST     = 4,    -- tới khoảng này thì thu + cộng scrap
 	FLY_SPEED        = 120,  -- tốc độ orb bay vào (studs/s)
 
-	RESPAWN_INTERVAL = 2,    -- mỗi 2s bù orb lẻ cho đủ TARGET_COUNT
-	RESPAWN_BATCH    = 5,    -- số orb bù mỗi đợt
+	RESPAWN_INTERVAL = 2,    -- mỗi 2s bù orb lẻ cho đủ mật độ mục tiêu
+	RESPAWN_BATCH    = 14,   -- số orb bù mỗi đợt (map lớn tiêu thụ nhiều hơn)
 }
 
 -------------------------------------------------------------------------------
@@ -154,6 +185,16 @@ Config.PICKUP = {
 Config.COMBAT = {
 	LASER_TIME = 0.08,   -- giây tia laser hiện trên client
 	LASER_THICK = 0.35,  -- độ dày tia (studs)
+
+	-- CHẮN THÂN (body-block): địch chỉ bắn được Tàu Mẹ nếu KHÔNG có unit phe-thủ
+	-- nào chắn ngang đường bắn attacker -> Tàu Mẹ. Unit chắn khi khoảng cách vuông
+	-- góc tới đường bắn <= (nửa bề ngang unit + BLOCK_MARGIN) và nằm giữa 2 đầu.
+	-- => fleet thành "bức tường"; fleet thủng/chết thì Tàu Mẹ mới phơi mình.
+	SHIP_GUARD = {
+		ENABLED = true,      -- tắt để quay lại hành vi cũ (bắn xuyên fleet)
+		BLOCK_MARGIN = 2,    -- lề cộng thêm vào bán kính chắn của mỗi unit (studs); to = tường "kín" hơn
+		EDGE_IGNORE = 0.06,  -- bỏ qua unit quá sát attacker/ship (t ngoài [EDGE, 1-EDGE]) — tránh tự-chắn ảo
+	},
 }
 
 -- Màu phe (đồng thời tô cho unit để phân biệt bạn/địch; loại unit phân biệt bằng

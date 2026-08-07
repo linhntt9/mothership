@@ -116,6 +116,16 @@ local function clearDefaultTerrain()
 	end
 end
 
+-- Dọn map hiện tại (baseplate + mọi mỏ) để dựng lại theo số Config mới.
+-- Building phải được BuildingSystem.clearAll() dọn TRƯỚC (giải phóng node mỏ).
+function MapSystem.clearAll()
+	local dep = Workspace:FindFirstChild("OreDeposits")
+	if dep then dep:Destroy() end
+	table.clear(GameState.oreDeposits)
+	local base = Workspace:FindFirstChild("Baseplate")
+	if base then base:Destroy() end
+end
+
 function MapSystem.init()
 	clearDefaultTerrain()
 	makeBaseplate()
@@ -128,6 +138,12 @@ function MapSystem.init()
 
 	print(("[MapSystem] Map %dx%d, %d ore deposits (mỏ)"):format(
 		Config.MAP.SIZE, Config.MAP.SIZE, made))
+end
+
+-- Dựng lại map từ đầu theo Config hiện tại (dùng khi Chơi lại để áp số MAP mới).
+function MapSystem.rebuild()
+	MapSystem.clearAll()
+	MapSystem.init()
 end
 
 return MapSystem

@@ -40,6 +40,7 @@ function EconomySystem.spend(ownerId, amount)
 	if not e then return false end
 	if e.scrap < amount then return false end
 	e.scrap -= amount
+	if e.stats then e.stats.scrapSpent += amount end -- thống kê "scrap đã tiêu"
 	EconomySystem.sendScrapUpdate(ownerId)
 	return true
 end
@@ -72,7 +73,7 @@ function EconomySystem.tryBuy(ownerId, unitType)
 	local owner = GameState.motherships[ownerId]
 	if not owner or not owner.alive then return false, "dead" end
 
-	local weight = Config.FLEET.WEIGHT[unitType] or 1
+	local weight = stats.weight or 1
 	if FleetSystem.getUsedCap(ownerId) + weight > FleetSystem.getMaxCap(ownerId) then
 		return false, "cap"
 	end

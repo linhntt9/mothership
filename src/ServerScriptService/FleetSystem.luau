@@ -5,7 +5,7 @@
 
 	M1:
 	  - Spawn unit (debug qua phím 1-4, chưa tính scrap — economy ở M4).
-	  - Mỗi unit thuộc 1 RING (FRONT/BACK/OUTER) theo loại của nó.
+	  - Mỗi unit thuộc 1 RING (SCREEN ngoài / GUARD giữa / CORE trong) theo Config.
 	  - Mỗi Heartbeat: xếp unit đều quanh vòng của ring, cả hạm đội xoay chậm,
 	    unit steer mượt về slot của mình (không teleport) -> cảm giác "đuôi bám".
 	  - Fleet cap: usedCap (tổng weight) không vượt maxCap; gửi HUD cập nhật.
@@ -111,7 +111,7 @@ function FleetSystem.spawnUnit(ownerId, unitType, ignoreCap)
 	end
 
 	-- Kiểm tra fleet cap (trừ khi được phép bỏ qua)
-	local weight = Config.FLEET.WEIGHT[unitType] or 1
+	local weight = stats.weight or 1
 	if not ignoreCap and FleetSystem.getUsedCap(ownerId) + weight > FleetSystem.getMaxCap(ownerId) then
 		return false
 	end
@@ -124,18 +124,21 @@ function FleetSystem.spawnUnit(ownerId, unitType, ignoreCap)
 		kind = "Unit",          -- dùng cho CombatSystem phân loại target
 		ownerId = ownerId,
 		unitType = unitType,
-		ring = stats.ring,      -- "FRONT" | "BACK" | "OUTER"
+		ring = stats.ring,      -- "SCREEN" | "GUARD" | "CORE"
 		part = part,
 		radius = math.max(vis.size.X, vis.size.Z) / 2, -- bán kính va chạm (separation)
 		hp = stats.hp,
 		maxHp = stats.hp,
 		speed = stats.speed,
 		weight = weight,
-		-- Combat (M2)
+		-- Combat
 		dmg = stats.dmg,
 		range = stats.range,
 		fireRate = stats.fireRate,
-		aoe = stats.aoe or 0,
+		aoe = stats.aoeRadius or 0,
+		attack = stats.attack or "HITSCAN",       -- (Bước 3: COLLISION cho Kamikaze)
+		targeting = stats.targeting or "STANDARD", -- (Bước 1-3: kiểu nhắm riêng)
+		special = stats.special,                   -- (Bước 3: GRAVITY_STUN | KAMIKAZE)
 		cooldown = 0,           -- đếm lùi tới lần bắn kế
 	}
 	table.insert(GameState.units, unit)
@@ -189,8 +192,9 @@ local function steerUnit(u, target, faceDir, dt)
 	end
 end
 
--- Thứ tự lớp theo loại: tank vào trong, drone ra ngoài.
-local LAYER_ORDER = { Destroyer = 1, Frigate = 2, PlasmaCruiser = 2, Drone = 3 }
+-- Lớp đội hình theo RING: CORE (trong) -> GUARD (giữa) -> SCREEN (ngoài).
+-- => pháo (CORE) được che trong cùng, tank (GUARD) chắn giữa, bia (SCREEN) ngoài.
+local RING_LAYER = { CORE = 1, GUARD = 2, SCREEN = 3 }
 
 -- "Bề ngang" của 1 unit (studs) — dùng để scale khoảng cách theo kích cỡ.
 local BASE_FOOTPRINT = 4.2 -- ~ cỡ Drone, làm chuẩn (scale = 1)
@@ -211,7 +215,7 @@ local function packRings(list, center, dt)
 	-- Bucket theo lớp để sắp ổn định (không dùng table.sort tránh đảo chỗ mỗi frame)
 	local buckets = { {}, {}, {} }
 	for _, u in ipairs(list) do
-		local L = LAYER_ORDER[u.unitType] or 3
+		local L = RING_LAYER[u.ring] or 3
 		table.insert(buckets[L], u)
 	end
 	local ordered = {}

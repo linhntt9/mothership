@@ -13,6 +13,8 @@
 	  - Áp dụng cho quân/công trình SPAWN MỚI: các chỉ số combat của unit &
 	    Tàu Mẹ (hp/dmg/range/fireRate...) được "chốt" lúc spawn -> mua quân mới
 	    hoặc Restart để thấy đổi.
+	  - Cần CHƠI LẠI (dựng lại map): MAP.SIZE, số mỏ, khoảng cách mỏ, spawn góc,
+	    số orb/cụm scrap. Sửa số xong bấm "☠ Tự sát / Chơi lại".
 ]]
 
 local Players = game:GetService("Players")
@@ -46,6 +48,13 @@ add("— CAMERA —", nil)
 add("Height (gần/xa)", "CAMERA.HEIGHT")
 add("Tilt", "CAMERA.TILT_OFFSET")
 
+-- MAP: các field này chỉ đổi khi map ĐƯỢC DỰNG LẠI -> bấm "Chơi lại" để áp.
+add("— MAP (Chơi lại để áp) —", nil)
+add("Kích thước map", "MAP.SIZE")
+add("Số mỏ", "MAP.ORE_DEPOSIT_COUNT")
+add("Khoảng cách mỏ", "MAP.ORE_DEPOSIT_MIN_GAP")
+add("Spawn góc (0..1)", "MAP.SPAWN_FRAC")
+
 add("— HẠM ĐỘI —", nil)
 add("Base Cap", "FLEET.BASE_CAP")
 add("Orbit Spin", "FLEET.ORBIT_SPIN")
@@ -71,13 +80,15 @@ add("Hub T1 cost", "ECONOMY.DRONE_HUB.1.cost")
 add("— SCRAP RẢI —", nil)
 add("Magnet Range", "PICKUP.MAGNET_RANGE")
 add("Fly Speed", "PICKUP.FLY_SPEED")
-add("Target Count", "PICKUP.TARGET_COUNT")
+add("Giá trị mỗi orb (+scrap)", "PICKUP.VALUE")
+add("Mật độ orb /100k (Chơi lại)", "PICKUP.SCRAP_PER_100K")
+add("Mật độ cụm /100k (Chơi lại)", "PICKUP.CLUSTER_PER_100K")
+add("Cluster size (Chơi lại)", "PICKUP.CLUSTER_SIZE")
 
 -- Chỉ số từng loại quân (áp dụng cho quân spawn mới)
 for _, u in ipairs({ "Drone", "Frigate", "Destroyer", "PlasmaCruiser" }) do
 	add("— " .. u .. " —", nil)
-	add(u .. ".weight", "FLEET.WEIGHT." .. u)
-	for _, stat in ipairs({ "cost", "hp", "dmg", "range", "fireRate", "speed", "aoe" }) do
+	for _, stat in ipairs({ "cost", "hp", "dmg", "range", "fireRate", "speed", "weight", "aoeRadius" }) do
 		add(u .. "." .. stat, "UNITS." .. u .. "." .. stat)
 	end
 end
@@ -150,19 +161,34 @@ title.TextSize = 16
 title.Text = "CONFIG (sửa số rồi Enter)"
 title.Parent = panel
 
--- Nút Tự sát / Chơi lại (reset ván ngay)
+-- Nút Tự sát / Chơi lại (reset ván ngay) — nửa trái hàng
 local restartBtn = Instance.new("TextButton")
-restartBtn.Size = UDim2.new(1, -12, 0, 30)
+restartBtn.Size = UDim2.new(0.6, -9, 0, 30)
 restartBtn.Position = UDim2.new(0, 6, 0, 32)
 restartBtn.BackgroundColor3 = Color3.fromRGB(180, 60, 60)
 restartBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
 restartBtn.Font = Enum.Font.GothamBold
 restartBtn.TextSize = 15
-restartBtn.Text = "☠ Tự sát / Chơi lại"
+restartBtn.Text = "☠ Chơi lại"
 local rbc = Instance.new("UICorner"); rbc.CornerRadius = UDim.new(0, 6); rbc.Parent = restartBtn
 restartBtn.Parent = panel
 restartBtn.Activated:Connect(function()
 	Remotes.Restart:FireServer()
+end)
+
+-- Nút Tạo bot (+1 bot ngay) — nửa phải hàng
+local addBotBtn = Instance.new("TextButton")
+addBotBtn.Size = UDim2.new(0.4, -9, 0, 30)
+addBotBtn.Position = UDim2.new(0.6, 3, 0, 32)
+addBotBtn.BackgroundColor3 = Color3.fromRGB(60, 120, 90)
+addBotBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+addBotBtn.Font = Enum.Font.GothamBold
+addBotBtn.TextSize = 15
+addBotBtn.Text = "＋ Tạo bot"
+local abc = Instance.new("UICorner"); abc.CornerRadius = UDim.new(0, 6); abc.Parent = addBotBtn
+addBotBtn.Parent = panel
+addBotBtn.Activated:Connect(function()
+	Remotes.AddBot:FireServer()
 end)
 
 local scroll = Instance.new("ScrollingFrame")
