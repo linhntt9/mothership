@@ -19,6 +19,7 @@ local UserInputService = game:GetService("UserInputService")
 local Workspace = game:GetService("Workspace")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
+local Config = require(ReplicatedStorage.Config)
 local Remotes = require(ReplicatedStorage.Remotes)
 local ClientBus = require(script.Parent.ClientBus)
 
@@ -51,8 +52,10 @@ local SPAWN_KEYS = {
 
 -- Kích cỡ ghost theo loại (khớp VISUAL bên BuildingSystem — chỉ để gợi ý)
 local GHOST_SIZE = {
-	ScrapMine = Vector3.new(7, 7, 7),
-	DroneHub  = Vector3.new(10, 6, 10),
+	ScrapMine = Vector3.new(24, 7, 24),
+	DroneHub  = Vector3.new(24, 7, 24),
+	LaserSat  = Vector3.new(22, 8, 22),
+	PlasmaSat = Vector3.new(24, 8, 24),
 }
 
 -------------------------------------------------------------------------------
@@ -133,8 +136,8 @@ UserInputService.InputBegan:Connect(function(input, gameProcessed)
 			if pt then Remotes.PlaceBuilding:FireServer(buildMode, pt) end
 			exitBuildMode() -- đặt xong -> ghost biến mất ngay (muốn xây tiếp: bấm Q/R lại)
 		else
-			local part = buildingUnderCursor()
-			if part then Remotes.UpgradeBuilding:FireServer(part) end
+			-- Click building của mình -> mở panel Nâng cấp/Bán (HUD lo); click ra ngoài -> bỏ chọn.
+			ClientBus.selectBuilding:Fire(buildingUnderCursor())
 		end
 		return
 	elseif input.UserInputType == Enum.UserInputType.MouseButton2 then
@@ -153,7 +156,11 @@ UserInputService.InputBegan:Connect(function(input, gameProcessed)
 	elseif input.KeyCode == Enum.KeyCode.Q then
 		enterBuildMode("ScrapMine")                             -- Q: xây Mine
 	elseif input.KeyCode == Enum.KeyCode.R then
-		enterBuildMode("DroneHub")                              -- R: xây Hub
+		enterBuildMode("DroneHub")                              -- R: xây House
+	elseif input.KeyCode == Enum.KeyCode.T then
+		enterBuildMode("LaserSat")                              -- T: Laser Satellite
+	elseif input.KeyCode == Enum.KeyCode.Y then
+		enterBuildMode("PlasmaSat")                             -- Y: Plasma Satellite
 	elseif input.KeyCode == Enum.KeyCode.Space then
 		Remotes.SplitInput:FireServer(true)
 	elseif input.KeyCode == Enum.KeyCode.Escape then
@@ -176,17 +183,74 @@ local accum = 0
 -- LOBBY: lái bằng WASD. Camera nhìn về -Z (cổng ở trước) nên W = -Z (tiến),
 -- S = +Z, A = -X, D = +X (trục thế giới, camera không xoay).
 local LOBBY_AHEAD = 45 -- gửi đích cách tàu bao xa theo hướng phím -> chạy liên tục khi giữ
+-- Hướng WASD THEO CAMERA (W = tới theo góc nhìn hiện tại). Dùng IsKeyDown đọc PHÍM
+-- VẬT LÝ nên KHÔNG bị bộ gõ Telex biến đổi; đang gõ trong ô ⚙ thì không lái.
 local function wasdDir()
-	local x, z = 0, 0
-	if UserInputService:IsKeyDown(Enum.KeyCode.W) then z -= 1 end
-	if UserInputService:IsKeyDown(Enum.KeyCode.S) then z += 1 end
-	if UserInputService:IsKeyDown(Enum.KeyCode.A) then x -= 1 end
-	if UserInputService:IsKeyDown(Enum.KeyCode.D) then x += 1 end
-	return Vector3.new(x, 0, z)
+	if UserInputService:GetFocusedTextBox() then return Vector3.zero end
+	local kf = UserInputService:IsKeyDown(Enum.KeyCode.W)
+	local kb = UserInputService:IsKeyDown(Enum.KeyCode.S)
+	local kl = UserInputService:IsKeyDown(Enum.KeyCode.A)
+	local kr = UserInputService:IsKeyDown(Enum.KeyCode.D)
+	if not (kf or kb or kl or kr) then return Vector3.zero end
+	local cam = Workspace.CurrentCamera
+	if not cam then return Vector3.zero end
+	local fwd = Vector3.new(cam.CFrame.LookVector.X, 0, cam.CFrame.LookVector.Z)
+	fwd = (fwd.Magnitude > 1e-3) and fwd.Unit or Vector3.new(0, 0, -1)
+	local rgt = Vector3.new(cam.CFrame.RightVector.X, 0, cam.CFrame.RightVector.Z)
+	rgt = (rgt.Magnitude > 1e-3) and rgt.Unit or Vector3.new(1, 0, 0)
+	local move = Vector3.zero
+	if kf then move += fwd end
+	if kb then move -= fwd end
+	if kr then move += rgt end
+	if kl then move -= rgt end
+	return move
 end
+
+-- Hover công trình -> viền sáng (Highlight).
+local hoverHL = Instance.new("Highlight")
+hoverHL.Name = "BuildingHover"
+hoverHL.FillTransparency = 1
+hoverHL.OutlineColor = Color3.fromRGB(255, 240, 120)
+hoverHL.OutlineTransparency = 0
+hoverHL.DepthMode = Enum.HighlightDepthMode.Occluded
+hoverHL.Enabled = false
+hoverHL.Parent = Workspace
+
+-- Giữ phím 1-9 -> đẻ quân liên tục (tap = 1 con; giữ > HOLD_DELAY thì lặp mỗi HOLD_RATE).
+local spawnHeld, spawnAccum = 0, 0
+local HOLD_DELAY, HOLD_RATE = 0.25, 0.12
 
 RunService.RenderStepped:Connect(function(dt)
 	local point = cursorWorldPoint()
+
+	-- Hover công trình -> hiện viền (trong trận, không ở chế độ xây).
+	if playing and not buildMode then
+		local hp = buildingUnderCursor()
+		hoverHL.Adornee = hp
+		hoverHL.Enabled = hp ~= nil
+	elseif hoverHL.Enabled then
+		hoverHL.Enabled = false
+	end
+
+	-- Giữ phím 1-9 -> đẻ quân liên tục.
+	if playing and not UserInputService:GetFocusedTextBox() then
+		local held = false
+		for key in pairs(SPAWN_KEYS) do
+			if UserInputService:IsKeyDown(key) then held = true; break end
+		end
+		if held then
+			spawnHeld += dt
+			spawnAccum += dt
+			if spawnHeld > HOLD_DELAY and spawnAccum >= HOLD_RATE then
+				spawnAccum = 0
+				for key, utype in pairs(SPAWN_KEYS) do
+					if UserInputService:IsKeyDown(key) then Remotes.SpawnUnit:FireServer(utype) end
+				end
+			end
+		else
+			spawnHeld, spawnAccum = 0, 0
+		end
+	end
 
 	-- Ghost bám chuột khi đang ở chế độ xây
 	if buildMode and ghost and point then
@@ -205,8 +269,22 @@ RunService.RenderStepped:Connect(function(dt)
 				Remotes.MoveInput:FireServer(ship.Position)
 			end
 		elseif playing then
-			-- Trong trận: lái theo con trỏ chuột.
-			if point then Remotes.MoveInput:FireServer(point) end
+			local ship = getMyShip()
+			if player:GetAttribute("BuildingUIOpen") then
+				-- Đang mở UI nâng cấp nhà -> Tàu Mẹ ĐỨNG YÊN.
+				if ship then Remotes.MoveInput:FireServer(ship.Position) end
+			elseif point then
+				-- Leash: kẹp đích cách Tàu Mẹ tối đa MOVE_LEASH (trỏ chuột kéo trong 1 khoảng).
+				if ship then
+					local sp = ship.Position
+					local flat = Vector3.new(point.X - sp.X, 0, point.Z - sp.Z)
+					local leash = Config.MOTHERSHIP.MOVE_LEASH or 1e9
+					if flat.Magnitude > leash then
+						point = sp + flat.Unit * leash
+					end
+				end
+				Remotes.MoveInput:FireServer(point)
+			end
 		else
 			-- Lobby: lái bằng WASD (giữ = tiến theo hướng phím, thả = dừng).
 			local ship = getMyShip()

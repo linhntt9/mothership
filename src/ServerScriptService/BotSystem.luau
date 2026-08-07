@@ -76,6 +76,18 @@ local function nearestEnemyMothership(ownerId, pos)
 	return best
 end
 
+-- Building địch gần nhất (dùng cho raider tập trung phá công trình).
+local function nearestEnemyBuilding(ownerId, pos)
+	local best, bd
+	for _, b in ipairs(GameState.buildings) do
+		if b.ownerId ~= ownerId and b.part and b.part.Parent then
+			local d = (b.part.Position - pos).Magnitude
+			if not bd or d < bd then best, bd = b, d end
+		end
+	end
+	return best
+end
+
 local function nearestEmptyDeposit(pos)
 	local best, bd
 	for node, info in pairs(GameState.oreDeposits) do
@@ -140,6 +152,20 @@ local function decide(ownerId)
 	if not entry or not entry.alive then return end
 	local st = botStates[ownerId]
 	local pos = entry.part.Position
+
+	-- RAIDER: chỉ lao vào phá công trình địch (không kinh tế, không lùi, không mua thêm).
+	if st.raider then
+		local b = nearestEnemyBuilding(ownerId, pos)
+		if b then
+			entry.targetPoint = b.part.Position
+		else
+			local e = nearestEnemyMothership(ownerId, pos)
+			entry.targetPoint = e and e.part.Position or pos
+		end
+		entry.split = false
+		st.state = "RAID"
+		return
+	end
 
 	-- Kinh tế: luôn cố mua quân + xây hub khi cap gần đầy
 	botBuy(ownerId)
@@ -250,28 +276,54 @@ end
 
 -- Sinh THÊM 1 bot khi đang chơi (nút "Tạo bot" ở bảng ⚙). Bot mới tự tham gia
 -- vòng quyết định (loop đọc botStates) + leaderboard ngay.
-function BotSystem.addBot()
+-- nearPos (tùy chọn): spawn bot NGAY GẦN điểm này (vd cạnh Tàu Mẹ người chơi) để
+-- test combat/tháp ngay; không truyền -> spawn ở góc như thường.
+-- raider (tùy chọn): spawn kèm đội quân sẵn + CHỈ tập trung phá công trình địch
+-- (dùng cho nút "＋ Bot gần" để test tháp/base defense).
+local RAIDER_FLEET = { Drone = 6, Frigate = 3, Destroyer = 2 }
+
+function BotSystem.addBot(nearPos, raider)
 	if not MatchState.isPlaying() then return false end -- chỉ tạo bot khi đang trong trận
 	local id = nextBotId()
 	local n = -id                       -- 1,2,3... dùng để đặt tên & chọn màu
-	local spawns = botSpawns()
-	local base = spawns[((n - 1) % #spawns) + 1]
-	-- lệch ngẫu nhiên để nhiều bot cùng góc không đè lên nhau
-	local pos = Util.clampToMap(
-		Vector3.new(base.X + math.random(-40, 40), Config.MOTHERSHIP.RADIUS, base.Z + math.random(-40, 40)),
-		Config.MAP.SIZE
-	)
+	local pos
+	if nearPos then
+		local ang = math.random() * math.pi * 2
+		pos = Util.clampToMap(
+			Vector3.new(nearPos.X + math.cos(ang) * 55, Config.MOTHERSHIP.RADIUS, nearPos.Z + math.sin(ang) * 55),
+			Config.MAP.SIZE
+		)
+	else
+		local spawns = botSpawns()
+		local base = spawns[((n - 1) % #spawns) + 1]
+		pos = Util.clampToMap(
+			Vector3.new(base.X + math.random(-40, 40), Config.MOTHERSHIP.RADIUS, base.Z + math.random(-40, 40)),
+			Config.MAP.SIZE
+		)
+	end
 	local color = BOT_COLORS[n] or Color3.fromHSV(math.random(), 0.65, 1)
 
 	MothershipSystem.spawn(id, true, pos, color)
 	botStates[id] = {
 		home = pos,
-		name = "Bot " .. n,
+		name = (raider and "Raider " or "Bot ") .. n,
 		timer = math.random() * Config.BOT.DECISION_INTERVAL,
 		state = "ECONOMY",
+		raider = raider or nil,
 	}
+
+	if raider then
+		-- Đội quân sẵn, ép CHỈ đánh building (BUILDING_ONLY) để test phòng thủ.
+		for utype, cnt in pairs(RAIDER_FLEET) do
+			for _ = 1, cnt do FleetSystem.spawnUnit(id, utype, true) end
+		end
+		for _, u in ipairs(GameState.units) do
+			if u.ownerId == id then u.targeting = "BUILDING_ONLY" end
+		end
+	end
+
 	broadcastLeaderboard()
-	print(("[BotSystem] +1 bot (id %d)"):format(id))
+	print(("[BotSystem] +1 %s (id %d)"):format(raider and "raider" or "bot", id))
 	return true
 end
 
@@ -289,9 +341,14 @@ end
 function BotSystem.init()
 	-- KHÔNG spawn bot ở init: bot chỉ có khi vào trận (Main gọi BotSystem.reset).
 
-	-- Nút "Tạo bot" ở bảng ⚙ -> sinh thêm 1 bot.
-	Remotes.AddBot.OnServerEvent:Connect(function()
-		BotSystem.addBot()
+	-- Nút "Tạo bot" ở bảng ⚙. near=true -> spawn cạnh Tàu Mẹ người bấm (test nhanh).
+	Remotes.AddBot.OnServerEvent:Connect(function(player, near)
+		local nearPos
+		if near then
+			local e = GameState.motherships[player.UserId]
+			nearPos = e and e.part and e.part.Position or nil
+		end
+		BotSystem.addBot(nearPos, near == true) -- bot gần = raider (có sẵn quân, phá công trình)
 	end)
 
 	RunService.Heartbeat:Connect(function(dt)

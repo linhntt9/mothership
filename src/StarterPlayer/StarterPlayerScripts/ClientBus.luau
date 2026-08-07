@@ -10,4 +10,8 @@ local ClientBus = {}
 -- Fire(buildingType: string) khi người chơi bấm nút xây trên hotbar.
 ClientBus.enterBuild = Instance.new("BindableEvent")
 
+-- Fire(part: BasePart | nil) khi click 1 building của mình (mở panel Nâng cấp/Bán);
+-- nil = bỏ chọn.
+ClientBus.selectBuilding = Instance.new("BindableEvent")
+
 return ClientBus

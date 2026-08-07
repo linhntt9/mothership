@@ -30,8 +30,9 @@ local playerGui = player:WaitForChild("PlayerGui")
 -------------------------------------------------------------------------------
 -- Danh sách field tune được (label, path)
 -------------------------------------------------------------------------------
+-- Mỗi field thuộc 1 TAB. Mặc định "Game"; bot AI ở tab "Bot".
 local tunables = {}
-local function add(label, path) table.insert(tunables, { label = label, path = path }) end
+local function add(label, path, tab) table.insert(tunables, { label = label, path = path, tab = tab or "Game" }) end
 
 add("— TÀU MẸ —", nil)
 add("Speed", "MOTHERSHIP.SPEED")
@@ -70,12 +71,6 @@ add("— KINH TẾ —", nil)
 add("Start Scrap", "ECONOMY.START_SCRAP")
 add("Income Tick (s)", "ECONOMY.INCOME_TICK")
 add("Build Range", "ECONOMY.BUILD_RANGE")
-add("Mine T1 income", "ECONOMY.SCRAP_MINE.1.income")
-add("Mine T1 cost", "ECONOMY.SCRAP_MINE.1.cost")
-add("Mine T2 income", "ECONOMY.SCRAP_MINE.2.income")
-add("Mine T3 income", "ECONOMY.SCRAP_MINE.3.income")
-add("Hub T1 cap", "ECONOMY.DRONE_HUB.1.cap")
-add("Hub T1 cost", "ECONOMY.DRONE_HUB.1.cost")
 
 add("— SCRAP RẢI —", nil)
 add("Magnet Range", "PICKUP.MAGNET_RANGE")
@@ -92,6 +87,55 @@ for _, u in ipairs({ "Drone", "Frigate", "Destroyer", "PlasmaCruiser", "Intercep
 		add(u .. "." .. stat, "UNITS." .. u .. "." .. stat)
 	end
 end
+
+-- ===== TAB "BOT" — chỉnh AI bot =====
+add("— BOT AI —", nil, "Bot")
+add("Số bot đầu trận (Chơi lại)", "BOT_COUNT", "Bot")
+add("Nhịp quyết định (s)", "BOT.DECISION_INTERVAL", "Bot")
+add("Số mine mục tiêu", "BOT.TARGET_MINES", "Bot")
+add("Ngưỡng tấn công (x địch)", "BOT.AGGRESS_RATIO", "Bot")
+add("Lùi khi HP < (0..1)", "BOT.RETREAT_HP", "Bot")
+add("Lùi khi fleet yếu < (x)", "BOT.RETREAT_WEAK", "Bot")
+add("Mua quân mỗi nhịp", "BOT.BUY_PER_TICK", "Bot")
+
+-- ===== TAB "Nhà" — chỉnh stat công trình (tower dmg/range áp cho building spawn mới) =====
+add("— CHUNG —", nil, "Nhà")
+add("Kích cỡ nhà (xN, xây mới)", "ECONOMY.BUILD_SIZE_MULT", "Nhà")
+add("HP scale mỗi tier (x)", "ECONOMY.HP_TIER_MULT", "Nhà")
+
+add("— GOLD MINE —", nil, "Nhà")
+add("Mine · Max", "ECONOMY.SCRAP_MINE.MAX", "Nhà")
+add("Mine T1 cost", "ECONOMY.SCRAP_MINE.1.cost", "Nhà")
+add("Mine T1 income", "ECONOMY.SCRAP_MINE.1.income", "Nhà")
+add("Mine T2 income", "ECONOMY.SCRAP_MINE.2.income", "Nhà")
+add("Mine T3 income", "ECONOMY.SCRAP_MINE.3.income", "Nhà")
+add("Mine HP nền", "ECONOMY.SCRAP_MINE.hpBase", "Nhà")
+
+add("— HOUSE —", nil, "Nhà")
+add("House · Max", "ECONOMY.DRONE_HUB.MAX", "Nhà")
+add("House T1 cost", "ECONOMY.DRONE_HUB.1.cost", "Nhà")
+add("House T1 cap", "ECONOMY.DRONE_HUB.1.cap", "Nhà")
+add("House T2 cap", "ECONOMY.DRONE_HUB.2.cap", "Nhà")
+add("House T3 cap", "ECONOMY.DRONE_HUB.3.cap", "Nhà")
+add("House T4 cap", "ECONOMY.DRONE_HUB.4.cap", "Nhà")
+add("House HP nền", "ECONOMY.DRONE_HUB.hpBase", "Nhà")
+
+add("— LASER SAT —", nil, "Nhà")
+add("Laser · Max", "ECONOMY.LASER_SAT.MAX", "Nhà")
+add("Laser dmg (nền)", "ECONOMY.LASER_SAT.base.dmg", "Nhà")
+add("Laser range", "ECONOMY.LASER_SAT.base.range", "Nhà")
+add("Laser fireRate", "ECONOMY.LASER_SAT.base.fireRate", "Nhà")
+add("Laser T1 cost", "ECONOMY.LASER_SAT.1.cost", "Nhà")
+add("Laser HP nền", "ECONOMY.LASER_SAT.hpBase", "Nhà")
+
+add("— PLASMA SAT —", nil, "Nhà")
+add("Plasma · Max", "ECONOMY.PLASMA_SAT.MAX", "Nhà")
+add("Plasma dmg (nền)", "ECONOMY.PLASMA_SAT.base.dmg", "Nhà")
+add("Plasma range", "ECONOMY.PLASMA_SAT.base.range", "Nhà")
+add("Plasma fireRate", "ECONOMY.PLASMA_SAT.base.fireRate", "Nhà")
+add("Plasma AoE", "ECONOMY.PLASMA_SAT.base.aoe", "Nhà")
+add("Plasma T1 cost", "ECONOMY.PLASMA_SAT.1.cost", "Nhà")
+add("Plasma HP nền", "ECONOMY.PLASMA_SAT.hpBase", "Nhà")
 
 -------------------------------------------------------------------------------
 -- Đọc/ghi giá trị trong bản Config của client (để hiển thị & đồng bộ)
@@ -161,39 +205,55 @@ title.TextSize = 16
 title.Text = "CONFIG (sửa số rồi Enter)"
 title.Parent = panel
 
--- Nút Tự sát / Chơi lại (reset ván ngay) — nửa trái hàng
-local restartBtn = Instance.new("TextButton")
-restartBtn.Size = UDim2.new(0.6, -9, 0, 30)
-restartBtn.Position = UDim2.new(0, 6, 0, 32)
-restartBtn.BackgroundColor3 = Color3.fromRGB(180, 60, 60)
-restartBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-restartBtn.Font = Enum.Font.GothamBold
-restartBtn.TextSize = 15
-restartBtn.Text = "☠ Chơi lại"
-local rbc = Instance.new("UICorner"); rbc.CornerRadius = UDim.new(0, 6); rbc.Parent = restartBtn
-restartBtn.Parent = panel
-restartBtn.Activated:Connect(function()
-	Remotes.Restart:FireServer()
-end)
+-- Hàng nút: Chơi lại | +Bot (góc) | +Bot gần (cạnh Tàu Mẹ để test ngay)
+local function rowBtn(x, w, color, text, onClick)
+	local b = Instance.new("TextButton")
+	b.Size = UDim2.new(w, -6, 0, 30)
+	b.Position = UDim2.new(x, 3, 0, 32)
+	b.BackgroundColor3 = color
+	b.TextColor3 = Color3.fromRGB(255, 255, 255)
+	b.Font = Enum.Font.GothamBold
+	b.TextSize = 14
+	b.Text = text
+	local c = Instance.new("UICorner"); c.CornerRadius = UDim.new(0, 6); c.Parent = b
+	b.Parent = panel
+	b.Activated:Connect(onClick)
+	return b
+end
+rowBtn(0, 0.38, Color3.fromRGB(180, 60, 60), "☠ Chơi lại", function() Remotes.Restart:FireServer() end)
+rowBtn(0.38, 0.28, Color3.fromRGB(60, 120, 90), "＋ Bot", function() Remotes.AddBot:FireServer() end)
+rowBtn(0.66, 0.34, Color3.fromRGB(70, 150, 110), "＋ Bot gần", function() Remotes.AddBot:FireServer(true) end)
 
--- Nút Tạo bot (+1 bot ngay) — nửa phải hàng
-local addBotBtn = Instance.new("TextButton")
-addBotBtn.Size = UDim2.new(0.4, -9, 0, 30)
-addBotBtn.Position = UDim2.new(0.6, 3, 0, 32)
-addBotBtn.BackgroundColor3 = Color3.fromRGB(60, 120, 90)
-addBotBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-addBotBtn.Font = Enum.Font.GothamBold
-addBotBtn.TextSize = 15
-addBotBtn.Text = "＋ Tạo bot"
-local abc = Instance.new("UICorner"); abc.CornerRadius = UDim.new(0, 6); abc.Parent = addBotBtn
-addBotBtn.Parent = panel
-addBotBtn.Activated:Connect(function()
-	Remotes.AddBot:FireServer()
-end)
+-- Tab bar (Game / Bot) — lọc field theo tab.
+local setTab            -- gán sau khi tạo rows
+local tabBtns = {}
+local tabBar = Instance.new("Frame")
+tabBar.Position = UDim2.new(0, 6, 0, 66)
+tabBar.Size = UDim2.new(1, -12, 0, 26)
+tabBar.BackgroundTransparency = 1
+tabBar.Parent = panel
+local tabLayout = Instance.new("UIListLayout")
+tabLayout.FillDirection = Enum.FillDirection.Horizontal
+tabLayout.Padding = UDim.new(0, 6)
+tabLayout.Parent = tabBar
+for i, tname in ipairs({ "Game", "Bot", "Nhà" }) do
+	local tb = Instance.new("TextButton")
+	tb.LayoutOrder = i
+	tb.Size = UDim2.new(0, 88, 1, 0)
+	tb.BackgroundColor3 = Color3.fromRGB(40, 46, 60)
+	tb.TextColor3 = Color3.fromRGB(230, 230, 235)
+	tb.Font = Enum.Font.GothamBold
+	tb.TextSize = 14
+	tb.Text = tname
+	local c = Instance.new("UICorner"); c.CornerRadius = UDim.new(0, 6); c.Parent = tb
+	tb.Activated:Connect(function() setTab(tname) end)
+	tb.Parent = tabBar
+	tabBtns[tname] = tb
+end
 
 local scroll = Instance.new("ScrollingFrame")
-scroll.Size = UDim2.new(1, -12, 1, -74)
-scroll.Position = UDim2.new(0, 6, 0, 68)
+scroll.Size = UDim2.new(1, -12, 1, -100)
+scroll.Position = UDim2.new(0, 6, 0, 96)
 scroll.BackgroundTransparency = 1
 scroll.BorderSizePixel = 0
 scroll.ScrollBarThickness = 6
@@ -218,6 +278,7 @@ local function makeHeaderRow(text, order)
 	lbl.TextXAlignment = Enum.TextXAlignment.Left
 	lbl.Text = text
 	lbl.Parent = scroll
+	return lbl
 end
 
 local function makeFieldRow(def, order)
@@ -264,15 +325,26 @@ local function makeFieldRow(def, order)
 			box.Text = cur and string.format("%g", cur) or "?"
 		end
 	end)
+	return row
 end
 
+-- Tạo rows + gắn tab để lọc.
+local rows = {} -- { inst, tab }
 for i, def in ipairs(tunables) do
-	if def.path == nil then
-		makeHeaderRow(def.label, i)
-	else
-		makeFieldRow(def, i)
+	local inst = (def.path == nil) and makeHeaderRow(def.label, i) or makeFieldRow(def, i)
+	rows[#rows + 1] = { inst = inst, tab = def.tab }
+end
+
+-- Đổi tab: hiện field đúng tab, tô sáng nút tab đang chọn.
+function setTab(t)
+	for _, r in ipairs(rows) do
+		r.inst.Visible = (r.tab == t)
+	end
+	for name, btn in pairs(tabBtns) do
+		btn.BackgroundColor3 = (name == t) and Color3.fromRGB(70, 120, 200) or Color3.fromRGB(40, 46, 60)
 	end
 end
+setTab("Game")
 
 -- Đồng bộ số đã lưu từ server -> cập nhật Config client + ô hiển thị
 Remotes.ConfigSync.OnClientEvent:Connect(function(data)

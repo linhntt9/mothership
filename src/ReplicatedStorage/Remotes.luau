@@ -38,6 +38,7 @@ local EVENT_NAMES = {
 	"CancelBuild",     -- client -> server: huỷ channel đang xây
 	"BuildStatus",     -- server -> client: trạng thái channel (đang xây, progress 0..1)
 	"UpgradeBuilding", -- client -> server: nâng cấp building (truyền part)
+	"SellBuilding",    -- client -> server: bán building (truyền part)
 	"Notify",          -- server -> client: thông báo ngắn (thiếu scrap, vị trí sai...)
 	"SetConfig",       -- (dev) client -> server: sửa 1 field số trong Config lúc chạy
 	"ConfigSync",      -- (dev) client xin / server trả bảng override đã lưu để hiển thị đúng

@@ -202,6 +202,28 @@ local function findTarget(u)
 	local myOwner = u.ownerId
 	local range = u.range
 
+	-- UNITS_ONLY (tháp phòng thủ): ưu tiên enemy Unit gần nhất; không có thì bắn
+	-- Tàu Mẹ địch đang áp sát base (nếu không bị fleet của nó chắn). KHÔNG bắn building.
+	if u.targeting == "UNITS_ONLY" then
+		local best, bestD
+		for _, o in ipairs(GameState.units) do
+			if o.ownerId ~= myOwner and o.part and o.part.Parent then
+				local d = (o.part.Position - pos).Magnitude
+				if d <= range and (not bestD or d < bestD) then best, bestD = o, d end
+			end
+		end
+		if best then return best end
+		for _, e in pairs(GameState.motherships) do
+			if e.ownerId ~= myOwner and e.alive and e.part then
+				local d = (e.part.Position - pos).Magnitude
+				if d <= range and (not bestD or d < bestD) and not shotBlockedByFleet(pos, e) then
+					best, bestD = e, d
+				end
+			end
+		end
+		return best
+	end
+
 	-- BUILDING_ONLY (Siege): chỉ nhắm enemy Building, bỏ qua Unit & Mothership.
 	if u.targeting == "BUILDING_ONLY" then
 		local best, bestD
@@ -488,6 +510,11 @@ local function updateCombat(dt)
 	-- Units bắn
 	for _, u in ipairs(GameState.units) do
 		fireEntity(u, dt)
+	end
+
+	-- Tháp phòng thủ (building có .dmg) cũng bắn quân địch.
+	for _, b in ipairs(GameState.buildings) do
+		if b.dmg then fireEntity(b, dt) end
 	end
 
 	-- Motherships cũng bắn (snapshot trước vì fireEntity có thể xoá mothership chết)

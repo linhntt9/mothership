@@ -27,8 +27,9 @@ local playing = false
 -- Điều khiển camera lobby: zoom (lăn chuột) + xoay quanh Tàu Mẹ (giữ chuột phải + rê).
 local lobbyZoom = 1
 local lobbyYaw = 0        -- góc xoay ngang (radian); 0 = ngay sau lưng
+local lobbyPitch = 0      -- lệch góc ngẩng thêm/bớt so với mặc định (kéo dọc chuột phải)
 local rotating = false
-local lastMouseX = nil    -- vị trí X con trỏ frame trước (để tính chênh lệch)
+local lastMouseX, lastMouseY = nil, nil -- vị trí con trỏ frame trước (tính chênh lệch)
 
 Remotes.MatchState.OnClientEvent:Connect(function(s)
 	playing = (s == "playing")
@@ -50,13 +51,14 @@ UserInputService.InputBegan:Connect(function(input)
 	if playing then return end
 	if input.UserInputType == Enum.UserInputType.MouseButton2 then
 		rotating = true
-		lastMouseX = UserInputService:GetMouseLocation().X
+		local mp = UserInputService:GetMouseLocation()
+		lastMouseX, lastMouseY = mp.X, mp.Y
 	end
 end)
 UserInputService.InputEnded:Connect(function(input)
 	if input.UserInputType == Enum.UserInputType.MouseButton2 then
 		rotating = false
-		lastMouseX = nil
+		lastMouseX, lastMouseY = nil, nil
 	end
 end)
 
@@ -101,22 +103,27 @@ RunService.RenderStepped:Connect(function()
 		camPos = pos + Vector3.new(0, Config.CAMERA.HEIGHT, Config.CAMERA.TILT_OFFSET)
 		lookAt = pos
 	else
-		-- Lobby: orbit quanh Tàu Mẹ. Khoảng cách theo lobbyZoom, góc ngang theo
-		-- lobbyYaw (giữ chuột phải + rê). yaw=0 = ngay sau lưng (nhìn về cổng -Z).
+		-- Lobby: orbit cầu quanh Tàu Mẹ. Giữ chuột phải + rê: NGANG = xoay (yaw),
+		-- DỌC = ngẩng/cúi (pitch). Lăn chuột = zoom khoảng cách.
 		local c = Config.LOBBY.CAM
-		-- Cập nhật yaw theo chênh lệch X con trỏ khi đang giữ chuột phải.
 		if rotating then
-			local mx = UserInputService:GetMouseLocation().X
+			local mp = UserInputService:GetMouseLocation()
 			if lastMouseX then
-				lobbyYaw -= (mx - lastMouseX) * c.ROT_SENS
+				lobbyYaw -= (mp.X - lastMouseX) * c.ROT_SENS
+				-- Kéo LÊN (mp.Y giảm) -> pitch giảm -> camera hạ, nhìn lên trời/chân trời.
+				lobbyPitch = math.clamp(lobbyPitch + (mp.Y - lastMouseY) * c.ROT_SENS, -0.75, 0.9)
 			end
-			lastMouseX = mx
+			lastMouseX, lastMouseY = mp.X, mp.Y
 		end
-		local dist = c.BACK * lobbyZoom
-		local ox = math.sin(lobbyYaw) * dist
-		local oz = math.cos(lobbyYaw) * dist
-		camPos = pos + Vector3.new(ox, c.HEIGHT * lobbyZoom, oz)
-		lookAt = pos + Vector3.new(0, c.LOOK_UP, 0)
+		-- Bán kính + góc ngẩng nền suy từ HEIGHT/BACK; cộng lobbyPitch từ kéo dọc.
+		-- Cận dưới ~0.05 rad (gần ngang tầm) -> thấy chân trời & trời; cận trên ~top-down.
+		local radius = math.sqrt(c.HEIGHT * c.HEIGHT + c.BACK * c.BACK) * lobbyZoom
+		local pitch = math.clamp(math.atan2(c.HEIGHT, c.BACK) + lobbyPitch, 0.05, 1.5)
+		local cp = math.cos(pitch) * radius
+		camPos = pos + Vector3.new(math.sin(lobbyYaw) * cp, math.sin(pitch) * radius, math.cos(lobbyYaw) * cp)
+		-- Kéo xuống góc thấp (pitch nhỏ) -> NÂNG điểm nhìn lên trời để camera ngước lên.
+		local skyBoost = math.max(0, 0.5 - pitch) * radius * 1.6
+		lookAt = pos + Vector3.new(0, c.LOOK_UP + skyBoost, 0)
 	end
 	camera.CFrame = CFrame.lookAt(camPos, lookAt)
 end)

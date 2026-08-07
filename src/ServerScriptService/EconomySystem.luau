@@ -65,13 +65,27 @@ local function incomeOf(ownerId)
 	return total
 end
 
+-- Số unit loại `unitType` mà owner đang có (cho trần maxCount).
+local function countUnits(ownerId, unitType)
+	local n = 0
+	for _, u in ipairs(GameState.units) do
+		if u.ownerId == ownerId and u.unitType == unitType then n += 1 end
+	end
+	return n
+end
+
 -- Mua 1 unit cho owner (dùng chung cho player & bot). Trả về ok, reason.
---   reason: "cap" | "scrap" | "type" | "dead" khi thất bại.
+--   reason: "cap" | "scrap" | "type" | "dead" | "max" khi thất bại.
 function EconomySystem.tryBuy(ownerId, unitType)
 	local stats = Config.UNITS[unitType]
 	if not stats then return false, "type" end
 	local owner = GameState.motherships[ownerId]
 	if not owner or not owner.alive then return false, "dead" end
+
+	-- Trần số lượng mỗi loại unit (canon Lordz).
+	if stats.maxCount and countUnits(ownerId, unitType) >= stats.maxCount then
+		return false, "max"
+	end
 
 	local weight = stats.weight or 1
 	if FleetSystem.getUsedCap(ownerId) + weight > FleetSystem.getMaxCap(ownerId) then
@@ -95,6 +109,8 @@ local function onBuyUnit(player, unitType)
 			Remotes.Notify:FireClient(player, "Đầy fleet cap!")
 		elseif reason == "scrap" then
 			Remotes.Notify:FireClient(player, "Không đủ scrap!")
+		elseif reason == "max" then
+			Remotes.Notify:FireClient(player, "Đã đạt tối đa loại quân này!")
 		end
 	end
 end

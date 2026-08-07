@@ -14,6 +14,8 @@
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Workspace = game:GetService("Workspace")
+local RunService = game:GetService("RunService")
 
 local Config = require(ReplicatedStorage.Config)
 local Remotes = require(ReplicatedStorage.Remotes)
@@ -65,7 +67,7 @@ local bar = Instance.new("Frame")
 bar.Name = "Hotbar"
 bar.AnchorPoint = Vector2.new(0.5, 1)
 bar.Position = UDim2.new(0.5, 0, 1, -12)
-bar.Size = UDim2.new(0, 11 * 116, 0, 66)
+bar.Size = UDim2.new(0, 13 * 100, 0, 66)
 bar.BackgroundTransparency = 1
 bar.Parent = gui
 local layout = Instance.new("UIListLayout")
@@ -80,7 +82,9 @@ local BUY = Config.UNITS
 local buttons = {}
 local defs = {
 	{ key = "ScrapMine",     kind = "build", label = "Mine",      hotkey = "Q", cost = Config.ECONOMY.SCRAP_MINE[1].cost, weight = 0 },
-	{ key = "DroneHub",      kind = "build", label = "Hub",       hotkey = "R", cost = Config.ECONOMY.DRONE_HUB[1].cost,  weight = 0 },
+	{ key = "DroneHub",      kind = "build", label = "House",     hotkey = "R", cost = Config.ECONOMY.DRONE_HUB[1].cost,  weight = 0 },
+	{ key = "LaserSat",      kind = "build", label = "LaserSat",  hotkey = "T", cost = Config.ECONOMY.LASER_SAT[1].cost,  weight = 0 },
+	{ key = "PlasmaSat",     kind = "build", label = "PlasmaSat", hotkey = "Y", cost = Config.ECONOMY.PLASMA_SAT[1].cost, weight = 0 },
 	{ key = "Drone",         kind = "buy",   label = "Drone",     hotkey = "1", cost = BUY.Drone.cost,         weight = BUY.Drone.weight },
 	{ key = "Frigate",       kind = "buy",   label = "Frigate",   hotkey = "2", cost = BUY.Frigate.cost,       weight = BUY.Frigate.weight },
 	{ key = "Destroyer",     kind = "buy",   label = "Destroyer", hotkey = "3", cost = BUY.Destroyer.cost,     weight = BUY.Destroyer.weight },
@@ -96,12 +100,12 @@ for i, def in ipairs(defs) do
 	local btn = Instance.new("TextButton")
 	btn.Name = def.key
 	btn.LayoutOrder = i
-	btn.Size = UDim2.new(0, 108, 1, 0)
+	btn.Size = UDim2.new(0, 92, 1, 0)
 	btn.BackgroundColor3 = (def.kind == "build") and Color3.fromRGB(70, 90, 120) or Color3.fromRGB(50, 70, 60)
 	btn.AutoButtonColor = true
 	btn.Font = Enum.Font.GothamBold
 	btn.TextColor3 = Color3.fromRGB(240, 240, 240)
-	btn.TextSize = 15
+	btn.TextSize = 13
 	btn.Text = ("%s\n%d ◈\n[%s]"):format(def.label, def.cost, def.hotkey)
 	local c = Instance.new("UICorner"); c.CornerRadius = UDim.new(0, 8); c.Parent = btn
 	btn.Parent = bar
@@ -436,9 +440,128 @@ Remotes.GameOver.OnClientEvent:Connect(function(payload)
 end)
 
 -------------------------------------------------------------------------------
+-- Panel chọn building: click building của mình -> Nâng cấp / Bán
+-------------------------------------------------------------------------------
+local B_NAME = {
+	ScrapMine = "Gold Mine", DroneHub = "House",
+	LaserSat = "Laser Satellite", PlasmaSat = "Plasma Satellite",
+}
+local ECOKEY = {
+	ScrapMine = "SCRAP_MINE", DroneHub = "DRONE_HUB",
+	LaserSat = "LASER_SAT", PlasmaSat = "PLASMA_SAT",
+}
+local selectedPart = nil
+
+-- Popup NEO Ở NHÀ (chiếu vị trí world -> màn hình mỗi frame). Sell trên, Upgrade dưới.
+local pop = Instance.new("Frame")
+pop.Name = "BuildingUI"
+pop.AnchorPoint = Vector2.new(0.5, 0.5)
+pop.Size = UDim2.new(0, 260, 0, 200)
+pop.BackgroundTransparency = 1
+pop.Visible = false
+pop.Parent = gui
+
+-- Nút Sell (phía trên nhà)
+local sellBtn = Instance.new("TextButton")
+sellBtn.AnchorPoint = Vector2.new(0.5, 0)
+sellBtn.Position = UDim2.new(0.5, 0, 0, 0); sellBtn.Size = UDim2.new(0, 200, 0, 42)
+sellBtn.BackgroundColor3 = Color3.fromRGB(225, 70, 70)
+sellBtn.Font = Enum.Font.GothamBlack; sellBtn.TextSize = 22
+sellBtn.TextColor3 = Color3.fromRGB(255, 255, 255); sellBtn.Text = "Sell"
+local sc2 = Instance.new("UICorner"); sc2.CornerRadius = UDim.new(0, 10); sc2.Parent = sellBtn
+sellBtn.Parent = pop
+
+-- Khối Upgrade (phía dưới nhà): "Next level +X" + nút Upgrade cost
+local ubox = Instance.new("Frame")
+ubox.AnchorPoint = Vector2.new(0.5, 1)
+ubox.Position = UDim2.new(0.5, 0, 1, 0); ubox.Size = UDim2.new(0, 240, 0, 78)
+ubox.BackgroundColor3 = Color3.fromRGB(20, 40, 28); ubox.BackgroundTransparency = 0.1
+local uc = Instance.new("UICorner"); uc.CornerRadius = UDim.new(0, 10); uc.Parent = ubox
+ubox.Parent = pop
+
+local nextLbl = Instance.new("TextLabel")
+nextLbl.Position = UDim2.new(0, 10, 0, 6); nextLbl.Size = UDim2.new(1, -20, 0, 24)
+nextLbl.BackgroundTransparency = 1; nextLbl.Font = Enum.Font.GothamBold; nextLbl.TextSize = 15
+nextLbl.TextColor3 = Color3.fromRGB(220, 235, 210); nextLbl.TextXAlignment = Enum.TextXAlignment.Left
+nextLbl.Text = ""; nextLbl.Parent = ubox
+
+local upBtn = Instance.new("TextButton")
+upBtn.AnchorPoint = Vector2.new(0.5, 1)
+upBtn.Position = UDim2.new(0.5, 0, 1, -6); upBtn.Size = UDim2.new(1, -16, 0, 40)
+upBtn.BackgroundColor3 = Color3.fromRGB(70, 120, 230)
+upBtn.Font = Enum.Font.GothamBlack; upBtn.TextSize = 18
+upBtn.TextColor3 = Color3.fromRGB(255, 255, 255); upBtn.Text = "Upgrade"
+local upc = Instance.new("UICorner"); upc.CornerRadius = UDim.new(0, 8); upc.Parent = upBtn
+upBtn.Parent = ubox
+
+local function closeUI()
+	pop.Visible = false
+	selectedPart = nil
+	player:SetAttribute("BuildingUIOpen", false)
+end
+
+sellBtn.Activated:Connect(function()
+	if selectedPart and selectedPart.Parent then Remotes.SellBuilding:FireServer(selectedPart) end
+	closeUI()
+end)
+upBtn.Activated:Connect(function()
+	if selectedPart and selectedPart.Parent then Remotes.UpgradeBuilding:FireServer(selectedPart) end
+end)
+
+-- Cập nhật nội dung "Next level" theo tier hiện tại (đọc attribute Tier từ part).
+local function refreshUpgradeInfo(part)
+	local cfg = Config.ECONOMY[ECOKEY[part.Name] or ""]
+	local tier = part:GetAttribute("Tier") or 1
+	local nxt = cfg and cfg[tier + 1]
+	if nxt then
+		upBtn.Visible = true
+		upBtn.Text = ("Upgrade   %d ◈"):format(nxt.cost)
+		local cur = cfg[tier]
+		local delta = ""
+		if part.Name == "ScrapMine" then
+			delta = ("+%d income"):format((nxt.income or 0) - (cur.income or 0))
+		elseif part.Name == "DroneHub" then
+			delta = ("+%d pop"):format((nxt.cap or 0) - (cur.cap or 0))
+		else
+			delta = ("+%d%% dmg"):format(math.floor(((nxt.dmgMult or 1) - (cur.dmgMult or 1)) * 100 + 0.5))
+		end
+		nextLbl.Text = "Next level:  " .. delta
+	else
+		upBtn.Visible = false
+		nextLbl.Text = "MAX LEVEL"
+	end
+end
+
+ClientBus.selectBuilding.Event:Connect(function(part)
+	selectedPart = part
+	if part then
+		refreshUpgradeInfo(part)
+		pop.Visible = true
+		player:SetAttribute("BuildingUIOpen", true) -- Tàu Mẹ đứng yên
+	else
+		closeUI()
+	end
+end)
+
+-- Mỗi frame: neo popup lên vị trí nhà + tự đóng nếu nhà mất; cập nhật giá nâng cấp.
+RunService.RenderStepped:Connect(function()
+	if not selectedPart then return end
+	if not selectedPart.Parent then closeUI(); return end
+	local cam = Workspace.CurrentCamera
+	if not cam then return end
+	local vp, onScreen = cam:WorldToViewportPoint(selectedPart.Position)
+	pop.Visible = onScreen
+	if onScreen then
+		pop.Position = UDim2.fromOffset(vp.X, vp.Y)
+		refreshUpgradeInfo(selectedPart)
+	end
+end)
+
+-------------------------------------------------------------------------------
 -- Ẩn/hiện HUD theo trạng thái trận (lobby: ẩn, playing: hiện)
 -------------------------------------------------------------------------------
 Remotes.MatchState.OnClientEvent:Connect(function(s)
+	closeUI() -- đóng popup nhà + nhả cờ đứng yên
 	if s == "playing" then
 		overlay.Visible = false -- vào trận mới -> tắt bảng kết thúc còn sót
 		gui.Enabled = true

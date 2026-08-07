@@ -83,8 +83,10 @@ Config.MOTHERSHIP = {
 	SPEED_WEIGHT_PENALTY = 0.005, -- mỗi điểm weight giảm 0.5% tốc độ (weight giờ nặng hơn nên penalty nhỏ lại)
 	SPEED_MIN_MULT = 0.55,        -- sàn: không chậm hơn 55% tốc độ nền
 	RADIUS = 6,
-	BUILD_CHANNEL = 0,   -- giây channel khi xây (0 = xây tức thì, không chờ)
+	BUILD_CHANNEL = 0.8, -- giây khoá di chuyển khi xây (canon: xây/nâng dừng di chuyển)
 	STOP_DIST = 2,       -- khoảng cách coi như đã tới đích (tránh rung quanh target)
+	MOVE_LEASH = 70,     -- đích di chuyển bị kẹp cách Tàu Mẹ tối đa bấy nhiêu studs
+	                     -- (trỏ chuột chỉ "kéo" trong 1 khoảng -> điều khiển kiểu steer)
 
 	-- Mothership cũng tự đánh (M-tweak): hitscan như unit, có AoE nhẹ
 	DMG = 45,
@@ -131,68 +133,69 @@ Config.FLEET = {
 --   MOTHERSHIP_FLEET_ONLY|BACKLINE_SEEK|MULTI_TARGET), special (nil|GRAVITY_STUN|KAMIKAZE).
 -- Bước 0: 4 unit cũ giữ nguyên chỉ số, chỉ ĐỔI RING (tank ra GUARD, pháo vào CORE).
 Config.UNITS = {
-	Drone = {
+	-- cost / weight (=population) / maxCount lấy theo canon Lordz. hp/dmg/range/
+	-- fireRate không có trong wiki nên giữ giá trị đã tune. maxCount = trần số
+	-- lượng unit loại đó 1 owner được có cùng lúc.
+	Drone = { -- Soldier
 		displayName = "Drone",
-		cost = 40, hp = 40, dmg = 6, range = 18, fireRate = 2.0, speed = 55,
-		ring = "SCREEN", weight = 1, aoeRadius = 0,
+		cost = 15, hp = 40, dmg = 6, range = 18, fireRate = 2.0, speed = 55,
+		ring = "SCREEN", weight = 1, aoeRadius = 0, maxCount = 200,
 		attack = "HITSCAN", targeting = "STANDARD",
 	},
-	Frigate = {
+	Frigate = { -- Archer
 		displayName = "Frigate",
-		cost = 350, hp = 120, dmg = 18, range = 40, fireRate = 1.2, speed = 32,
-		ring = "CORE", weight = 3, aoeRadius = 0,
+		cost = 125, hp = 120, dmg = 18, range = 40, fireRate = 1.2, speed = 32,
+		ring = "CORE", weight = 2, aoeRadius = 0, maxCount = 200,
 		attack = "HITSCAN", targeting = "STANDARD",
 	},
-	Destroyer = {
+	Destroyer = { -- Barbarian (canon không nêu số -> ước lượng)
 		displayName = "Destroyer",
-		cost = 500, hp = 600, dmg = 20, range = 22, fireRate = 0.8, speed = 22,
-		ring = "GUARD", weight = 5, aoeRadius = 0,
+		cost = 200, hp = 600, dmg = 20, range = 22, fireRate = 0.8, speed = 22,
+		ring = "GUARD", weight = 3, aoeRadius = 0, maxCount = 100,
 		attack = "HITSCAN", targeting = "STANDARD",
 	},
-	PlasmaCruiser = {
+	PlasmaCruiser = { -- Mage
 		displayName = "Plasma",
-		cost = 1000, hp = 200, dmg = 30, range = 34, fireRate = 0.6, speed = 26,
-		ring = "CORE", weight = 8, aoeRadius = 12,
+		cost = 450, hp = 200, dmg = 30, range = 34, fireRate = 0.6, speed = 26,
+		ring = "CORE", weight = 8, aoeRadius = 12, maxCount = 125,
 		attack = "HITSCAN", targeting = "STANDARD",
 	},
 	-- Bước 1 — biến thể targeting riêng (dùng chung khung hitscan):
-	Interceptor = {
+	Interceptor = { -- Knight
 		displayName = "Interceptor",
-		cost = 250, hp = 90, dmg = 12, range = 22, fireRate = 1.6, speed = 70,
-		ring = "SCREEN", weight = 1, aoeRadius = 0,
+		cost = 75, hp = 90, dmg = 12, range = 22, fireRate = 1.6, speed = 70,
+		ring = "SCREEN", weight = 2, aoeRadius = 0, maxCount = 200,
 		attack = "HITSCAN", targeting = "BACKLINE_SEEK", -- ưu tiên pháo địch ở CORE
 	},
-	Battleship = {
+	Battleship = { -- Dragon
 		displayName = "Battleship",
-		cost = 3000, hp = 900, dmg = 35, range = 34, fireRate = 1.0, speed = 24,
-		ring = "GUARD", weight = 5, aoeRadius = 0,
+		cost = 2500, hp = 900, dmg = 35, range = 34, fireRate = 1.0, speed = 24,
+		ring = "GUARD", weight = 15, aoeRadius = 0, maxCount = 66,
 		attack = "HITSCAN", targeting = "MULTI_TARGET", -- bắn tối đa 3 unit gần nhất
 	},
 	-- Bước 2 — pháo công thành: CHỈ bắn Building, tầm xa nhất, bắn chậm có nạp đạn.
-	SiegeRailgun = {
+	SiegeRailgun = { -- Ballista
 		displayName = "Siege",
-		cost = 3000, hp = 150, dmg = 120, range = 60, fireRate = 0.25, speed = 20,
-		ring = "CORE", weight = 3, aoeRadius = 0,
+		cost = 1000, hp = 150, dmg = 120, range = 60, fireRate = 0.25, speed = 20,
+		ring = "CORE", weight = 10, aoeRadius = 0, maxCount = 100,
 		attack = "HITSCAN", targeting = "BUILDING_ONLY",
 		chargeTime = 0.5, -- telegraph: nạp đạn 0.5s trước khi bắn
 	},
 	-- Bước 3a — CC: mỗi 1/fireRate giây phát sóng xung STUN + đẩy lệch đội hình địch.
-	-- Sát thương thấp là chủ đích; giá trị nằm ở khống chế.
-	Titan = {
+	Titan = { -- Troll
 		displayName = "Titan",
-		cost = 2500, hp = 700, dmg = 15, range = 20, fireRate = 0.5, speed = 20,
-		ring = "GUARD", weight = 4, aoeRadius = 0,
+		cost = 3000, hp = 700, dmg = 15, range = 20, fireRate = 0.5, speed = 20,
+		ring = "GUARD", weight = 15, aoeRadius = 0, maxCount = 5,
 		attack = "HITSCAN", targeting = "STANDARD", special = "GRAVITY_STUN",
 		stunRadius = 18,    -- bán kính sóng xung
 		stunDuration = 1.5, -- giây địch không bắn được (refresh, không cộng dồn)
 		pushStrength = 10,  -- studs đẩy lệch khỏi slot (rồi lerp về, không teleport)
 	},
 	-- Bước 3b — suicide: rời formation lao vào Mothership/fleet địch rồi nổ AoE.
-	-- KHÔNG đụng Building. hp thấp -> bị bắn rơi trước khi chạm = counter chính.
-	Kamikaze = {
+	Kamikaze = { -- Sapper
 		displayName = "Kamikaze",
 		cost = 150, hp = 30, dmg = 200, range = 6, fireRate = 1, speed = 65,
-		ring = "SCREEN", weight = 1, aoeRadius = 6, -- aoeRadius = bán kính nổ
+		ring = "SCREEN", weight = 1, aoeRadius = 6, maxCount = 24, -- aoeRadius = bán kính nổ
 		attack = "COLLISION", targeting = "MOTHERSHIP_FLEET_ONLY", special = "KAMIKAZE",
 		armRange = 45, -- Mothership/fleet địch vào tầm này -> rời quỹ đạo, lao thẳng
 	},
@@ -251,22 +254,51 @@ Config.TEAM = {
 Config.ECONOMY = {
 	START_SCRAP = 500,
 	INCOME_TICK = 1.0, -- giây
+	BUILD_SIZE_MULT = 1, -- hệ số nhân KÍCH CỠ nhà (kích cỡ nền đã ~2.5× Tàu Mẹ; tăng để to hơn)
+	-- HP nhà tính theo công thức: hp(tier) = hpBase * HP_TIER_MULT^(tier-1).
+	-- Config chỉ cần điền hpBase mỗi loại; nâng tier tự cộng máu theo hệ số này.
+	HP_TIER_MULT = 1.5,
 
+	-- GOLD MINE: income, chỉ đặt trên mỏ, tối đa MAX cái. hp = hpBase * scale^(tier-1).
 	SCRAP_MINE = {
-		-- chỉ đặt được TRÊN mỏ (ore deposit), 1 mine / mỏ
-		[1] = { cost = 250, income = 30, hp = 300 },
-		[2] = { cost = 400, income = 55, hp = 500 },
-		[3] = { cost = 800, income = 90, hp = 800 },
+		MAX = 5, hpBase = 750,
+		[1] = { cost = 250, income = 30 },
+		[2] = { cost = 400, income = 55 },
+		[3] = { cost = 800, income = 90 },
 	},
 
-	-- "Nhà lính": mỗi hub +25 cap (T1). Nâng T2 lên +40.
+	-- HOUSE (Drone Hub): +fleet cap ("population"), đất trống, 4 tier, tối đa MAX.
 	DRONE_HUB = {
-		[1] = { cost = 500, cap = 25, hp = 400 },
-		[2] = { cost = 700, cap = 40, hp = 600 },
+		MAX = 10, hpBase = 750,
+		[1] = { cost = 250,  cap = 25 },
+		[2] = { cost = 500,  cap = 50 },
+		[3] = { cost = 750,  cap = 75 },
+		[4] = { cost = 1000, cap = 100 },
+	},
+
+	-- LASER SATELLITE (Arrow Tower): tháp phòng thủ ĐƠN mục tiêu, đất trống, tối đa 30.
+	-- Nâng tier = +% damage (dmgMult). base = chỉ số bắn nền.
+	LASER_SAT = {
+		MAX = 30, hpBase = 900,
+		base = { dmg = 14, range = 42, fireRate = 1.5, aoe = 0 },
+		[1] = { cost = 500,  dmgMult = 1.00 },
+		[2] = { cost = 250,  dmgMult = 1.15 },
+		[3] = { cost = 500,  dmgMult = 1.30 },
+		[4] = { cost = 1000, dmgMult = 1.45 },
+	},
+
+	-- PLASMA SATELLITE (Mage Tower): tháp phòng thủ AoE, đất trống, tối đa 10.
+	PLASMA_SAT = {
+		MAX = 10, hpBase = 1000,
+		base = { dmg = 26, range = 36, fireRate = 0.9, aoe = 11 },
+		[1] = { cost = 1500, dmgMult = 1.00 },
+		[2] = { cost = 500,  dmgMult = 1.10 },
+		[3] = { cost = 1000, dmgMult = 1.20 },
+		[4] = { cost = 2000, dmgMult = 1.30 },
 	},
 
 	BUILD_RANGE = 250,      -- rất rộng: đặt được ở bất kỳ mỏ nào nhìn thấy trên màn hình
-	SELL_REFUND = 0.5,      -- bán building thu hồi 50%
+	SELL_REFUND = 0.5,      -- bán building thu hồi 50% tổng scrap đã đầu tư
 	RAID_LOOT = 0.5,        -- (stretch) phá building địch -> attacker +50% build cost
 }
 

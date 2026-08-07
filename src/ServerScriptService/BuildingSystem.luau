@@ -30,7 +30,7 @@ local EconomySystem = require(script.Parent.EconomySystem)
 local BuildingSystem = {}
 
 local folder            -- Folder chứa building part
-local MIN_BUILD_GAP = 14 -- khoảng cách tối thiểu giữa 2 building (studs)
+local MIN_BUILD_GAP = 28 -- khoảng cách tối thiểu giữa 2 building (studs; ~ cỡ 1 nhà)
 
 -- Bảng tier theo loại
 local function tierTable(buildingType)
@@ -38,16 +38,38 @@ local function tierTable(buildingType)
 		return Config.ECONOMY.SCRAP_MINE
 	elseif buildingType == "DroneHub" then
 		return Config.ECONOMY.DRONE_HUB
+	elseif buildingType == "LaserSat" then
+		return Config.ECONOMY.LASER_SAT
+	elseif buildingType == "PlasmaSat" then
+		return Config.ECONOMY.PLASMA_SAT
 	end
 	return nil
+end
+
+local function isTower(buildingType)
+	return buildingType == "LaserSat" or buildingType == "PlasmaSat"
+end
+
+-- Số building loại `bt` mà owner đang sở hữu (để chặn vượt MAX).
+local function countOwned(ownerId, bt)
+	local n = 0
+	for _, b in ipairs(GameState.buildings) do
+		if b.ownerId == ownerId and b.buildingType == bt then n += 1 end
+	end
+	return n
 end
 
 -------------------------------------------------------------------------------
 -- Hình dạng + thanh máu
 -------------------------------------------------------------------------------
+-- Kích cỡ NỀN ~2.5× Tàu Mẹ (footprint ~38-42 studs, bằng ô đỏ trong ảnh). Nhân
+-- thêm Config.ECONOMY.BUILD_SIZE_MULT khi dựng nếu muốn to/nhỏ hơn.
 local VISUAL = {
-	ScrapMine = { size = Vector3.new(7, 7, 7),  color = Color3.fromRGB(230, 180, 60) },
-	DroneHub  = { size = Vector3.new(10, 6, 10), color = Color3.fromRGB(90, 190, 230) },
+	-- Footprint ~24 (nhỏ gọn), cao 7 ≈ chiều cao Tàu Mẹ (dẹt).
+	ScrapMine = { size = Vector3.new(24, 7, 24), color = Color3.fromRGB(230, 180, 60) },
+	DroneHub  = { size = Vector3.new(24, 7, 24), color = Color3.fromRGB(90, 190, 230) },
+	LaserSat  = { size = Vector3.new(22, 8, 22), color = Color3.fromRGB(120, 220, 255) },
+	PlasmaSat = { size = Vector3.new(24, 8, 24), color = Color3.fromRGB(210, 130, 255) },
 }
 
 local function attachHealthBar(part, heightOffset)
@@ -99,10 +121,11 @@ local function findOreDepositAt(point)
 	return nil
 end
 
--- Có building nào quá gần point không?
+-- Có building nào quá gần point không? (giãn theo cỡ building đã phóng to)
 local function tooCloseToBuilding(point)
+	local gap = MIN_BUILD_GAP * (Config.ECONOMY.BUILD_SIZE_MULT or 1)
 	for _, b in ipairs(GameState.buildings) do
-		if b.part and Util.flatDist(point, b.part.Position) < MIN_BUILD_GAP then
+		if b.part and Util.flatDist(point, b.part.Position) < gap then
 			return true
 		end
 	end
@@ -141,27 +164,57 @@ local function attachOwnerName(part, text, teamColor, yOffset)
 	bb.Parent = part
 end
 
+-- Áp chỉ số theo tier hiện tại của building: máu + income/cap/combat.
+-- fullHeal=true -> set hp = maxHp (dùng khi dựng & sau nâng cấp).
+local function applyStats(b, fullHeal)
+	local tiers = tierTable(b.buildingType)
+	local stats = tiers[b.tier]
+	-- HP theo công thức: hpBase * HP_TIER_MULT^(tier-1) (config chỉ điền hpBase).
+	local hpMult = Config.ECONOMY.HP_TIER_MULT or 1.5
+	b.maxHp = math.floor((tiers.hpBase or 300) * hpMult ^ (b.tier - 1) + 0.5)
+	if fullHeal then b.hp = b.maxHp end
+	if b.buildingType == "ScrapMine" then
+		b.income = stats.income
+	elseif b.buildingType == "DroneHub" then
+		b.capBonus = stats.cap
+	elseif isTower(b.buildingType) then
+		local base = tiers.base
+		b.dmg = base.dmg * stats.dmgMult -- +% damage theo tier
+		b.range = base.range
+		b.fireRate = base.fireRate
+		b.aoe = base.aoe
+		b.targeting = "UNITS_ONLY" -- tháp chỉ bắn quân địch
+		b.cooldown = b.cooldown or 0
+	end
+end
+
 local function createBuilding(ownerId, buildingType, tier, position, node)
 	local v = VISUAL[buildingType]
-	local stats = tierTable(buildingType)[tier]
+	local mult = Config.ECONOMY.BUILD_SIZE_MULT or 1
 
 	local part = Instance.new("Part")
 	part.Name = buildingType
 	part.Anchored = true
 	part.CanCollide = false
-	part.Size = v.size
+	part.Size = v.size * mult          -- phóng to building
 	part.Position = position
 	part.Color = v.color
 	part.Material = Enum.Material.Metal
 	part:SetAttribute("OwnerUserId", ownerId)
+	part:SetAttribute("Tier", tier)    -- cho client hiện UI nâng cấp
 	part.Parent = folder
 
-	local fill = attachHealthBar(part, v.size.Y / 2 + 3)
+	local fill = attachHealthBar(part, part.Size.Y / 2 + 4)
 
 	-- Tên chủ nổi phía trên thanh máu.
 	local owner = GameState.motherships[ownerId]
 	local teamColor = owner and owner.teamColor or Color3.fromRGB(200, 200, 200)
-	attachOwnerName(part, displayName(ownerId), teamColor, v.size.Y / 2 + 10)
+	attachOwnerName(part, displayName(ownerId), teamColor, part.Size.Y / 2 + 12)
+
+	-- Tổng scrap đã đầu tư (để tính hoàn tiền khi bán).
+	local tiers = tierTable(buildingType)
+	local invested = 0
+	for t = 1, tier do invested += tiers[t].cost end
 
 	local b = {
 		kind = "Building",
@@ -170,12 +223,10 @@ local function createBuilding(ownerId, buildingType, tier, position, node)
 		tier = tier,
 		part = part,
 		healthFill = fill,
-		hp = stats.hp,
-		maxHp = stats.hp,
-		node = node,                            -- mỏ mà mine đứng trên (chỉ mine có)
-		income = (buildingType == "ScrapMine") and stats.income or nil,
-		capBonus = (buildingType == "DroneHub") and stats.cap or nil,
+		node = node,      -- mỏ mà mine đứng trên (chỉ mine có)
+		invested = invested,
 	}
+	applyStats(b, true)   -- set maxHp/hp + income/cap/combat theo tier
 	table.insert(GameState.buildings, b)
 	BuildingSystem.updateHealthBar(b)
 
@@ -229,6 +280,12 @@ local function onPlaceBuilding(player, buildingType, point)
 		return
 	end
 
+	-- Giới hạn số lượng mỗi loại (canon).
+	if countOwned(ownerId, buildingType) >= (tierTable(buildingType).MAX or math.huge) then
+		Remotes.Notify:FireClient(player, "Đã đạt tối đa loại này")
+		return
+	end
+
 	point = Util.clampToMap(point, Config.MAP.SIZE)
 
 	-- Tàu Mẹ phải trong tầm xây
@@ -251,21 +308,23 @@ local function onPlaceBuilding(player, buildingType, point)
 			return
 		end
 		-- Đặt trên đỉnh mỏ
+		local m = Config.ECONOMY.BUILD_SIZE_MULT or 1
 		buildPos = Vector3.new(
 			node.Position.X,
-			VISUAL.ScrapMine.size.Y / 2 + 2,
+			VISUAL.ScrapMine.size.Y * m / 2 + 2,
 			node.Position.Z
 		)
-	else -- DroneHub
+	else -- đất trống: House + tháp phòng thủ
 		if findOreDepositAt(point) then
-			Remotes.Notify:FireClient(player, "Không đặt Hub trên mỏ (chỉ trên đất trống)")
+			Remotes.Notify:FireClient(player, "Chỉ đặt trên đất trống (không trên mỏ)")
 			return
 		end
 		if tooCloseToBuilding(point) then
 			Remotes.Notify:FireClient(player, "Quá gần building khác")
 			return
 		end
-		buildPos = Vector3.new(point.X, VISUAL.DroneHub.size.Y / 2, point.Z)
+		local m = Config.ECONOMY.BUILD_SIZE_MULT or 1
+		buildPos = Vector3.new(point.X, VISUAL[buildingType].size.Y * m / 2, point.Z)
 	end
 
 	-- Đủ scrap?
@@ -341,16 +400,29 @@ local function onUpgrade(player, part)
 
 	EconomySystem.spend(ownerId, nextStats.cost)
 	b.tier += 1
-	b.maxHp = nextStats.hp
-	b.hp = nextStats.hp -- full heal
-	if b.buildingType == "ScrapMine" then
-		b.income = nextStats.income
-	else
-		b.capBonus = nextStats.cap
+	b.invested = (b.invested or 0) + nextStats.cost
+	if b.part then b.part:SetAttribute("Tier", b.tier) end -- cho client UI
+	applyStats(b, true) -- +stat theo tier + full heal (canon)
+	if b.buildingType == "DroneHub" then
 		FleetSystem.sendFleetUpdate(ownerId)
 	end
 	BuildingSystem.updateHealthBar(b)
 	Remotes.Notify:FireClient(player, "Nâng cấp lên tier " .. b.tier)
+end
+
+-- Bán building: hoàn SELL_REFUND * tổng đã đầu tư, rồi huỷ.
+local function onSell(player, part)
+	if typeof(part) ~= "Instance" then return end
+	local ownerId = player.UserId
+	local b
+	for _, bb in ipairs(GameState.buildings) do
+		if bb.part == part and bb.ownerId == ownerId then b = bb; break end
+	end
+	if not b then return end
+	local refund = math.floor((b.invested or 0) * Config.ECONOMY.SELL_REFUND)
+	EconomySystem.add(ownerId, refund)
+	BuildingSystem.destroyBuilding(b)
+	Remotes.Notify:FireClient(player, ("Đã bán (+%d ◈)"):format(refund))
 end
 
 -------------------------------------------------------------------------------
@@ -379,23 +451,26 @@ end
 
 -- Bot đặt building trực tiếp (không qua remote/ghost). Xây tức thì. Trả về true nếu OK.
 function BuildingSystem.botPlace(ownerId, buildingType, point)
-	if not tierTable(buildingType) then return false end
+	local tiers = tierTable(buildingType)
+	if not tiers then return false end
+	if countOwned(ownerId, buildingType) >= (tiers.MAX or math.huge) then return false end
 	local owner = GameState.motherships[ownerId]
 	if not owner or not owner.alive or owner.channel then return false end
 
 	point = Util.clampToMap(point, Config.MAP.SIZE)
 	if Util.flatDist(owner.part.Position, point) > Config.ECONOMY.BUILD_RANGE then return false end
 
-	local cost = tierTable(buildingType)[1].cost
+	local cost = tiers[1].cost
 	local buildPos, node
+	local m = Config.ECONOMY.BUILD_SIZE_MULT or 1
 
 	if buildingType == "ScrapMine" then
 		node = findOreDepositAt(point)
 		if not node or GameState.oreDeposits[node].occupied then return false end
-		buildPos = Vector3.new(node.Position.X, VISUAL.ScrapMine.size.Y / 2 + 2, node.Position.Z)
+		buildPos = Vector3.new(node.Position.X, VISUAL.ScrapMine.size.Y * m / 2 + 2, node.Position.Z)
 	else
 		if findOreDepositAt(point) or tooCloseToBuilding(point) then return false end
-		buildPos = Vector3.new(point.X, VISUAL.DroneHub.size.Y / 2, point.Z)
+		buildPos = Vector3.new(point.X, VISUAL[buildingType].size.Y * m / 2, point.Z)
 	end
 
 	if EconomySystem.getScrap(ownerId) < cost then return false end
@@ -414,6 +489,7 @@ function BuildingSystem.init()
 	Remotes.PlaceBuilding.OnServerEvent:Connect(onPlaceBuilding)
 	Remotes.CancelBuild.OnServerEvent:Connect(onCancelBuild)
 	Remotes.UpgradeBuilding.OnServerEvent:Connect(onUpgrade)
+	Remotes.SellBuilding.OnServerEvent:Connect(onSell)
 
 	RunService.Heartbeat:Connect(updateChannels)
 
