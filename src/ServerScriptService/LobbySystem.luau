@@ -119,6 +119,39 @@ function LobbySystem.buildHall()
 			bar.Material = Enum.Material.Neon
 			bar.Parent = folder
 			makeLabel(bar, "▶ " .. z.label, z.color, 10)
+		elseif z.id == "chest" then
+			-- Rương vàng: thân + nắp + khoá phát sáng, đặt ngay giữa vùng.
+			local body = Instance.new("Part")
+			body.Anchored = true
+			body.Size = Vector3.new(20, 12, 13)
+			body.Position = Vector3.new(z.x, 6, z.z)
+			body.Color = Color3.fromRGB(150, 100, 40)
+			body.Material = Enum.Material.WoodPlanks
+			body.Parent = folder
+			local lid = Instance.new("Part")
+			lid.Anchored = true
+			lid.Size = Vector3.new(20.4, 6, 13.4)
+			lid.Position = Vector3.new(z.x, 14, z.z)
+			lid.Color = Color3.fromRGB(150, 100, 40)
+			lid.Material = Enum.Material.WoodPlanks
+			lid.Parent = folder
+			for _, part in ipairs({ body, lid }) do
+				local band = Instance.new("Part") -- viền vàng phát sáng
+				band.Anchored = true
+				band.Size = part.Size + Vector3.new(0.6, -part.Size.Y + 2.2, 0.6)
+				band.Position = part.Position
+				band.Color = z.color
+				band.Material = Enum.Material.Neon
+				band.Parent = folder
+			end
+			local lock = Instance.new("Part") -- khoá phía trước
+			lock.Anchored = true
+			lock.Size = Vector3.new(3.4, 4, 1)
+			lock.Position = Vector3.new(z.x, 12, z.z + 6.7)
+			lock.Color = z.color
+			lock.Material = Enum.Material.Neon
+			lock.Parent = folder
+			makeLabel(lid, "🎁 " .. z.label, z.color, 12)
 		else
 			-- Gian hàng: 1 bục + bảng hiệu phía sau vùng kích hoạt
 			local booth = Instance.new("Part")

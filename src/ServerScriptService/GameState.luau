@@ -27,5 +27,8 @@ GameState.units = {}       -- (M1+) danh sách unit
 GameState.buildings = {}   -- (M4+) danh sách building
 GameState.oreDeposits = {} -- (M4+) [depositPart] = { occupied = bool } — nơi đặt Scrap Mine
 GameState.pickups = {}     -- (M4+) list orb scrap: { part, value, flyingTo=ownerId|nil }
+GameState.activeHero = {}  -- [ownerId] = heroId (Tàu Mẹ ĐANG LÁI -> buff + tạo hình)
+GameState.ownedHeroes = {} -- [ownerId] = { [heroId]=true } (Tàu Mẹ đã sở hữu; roll từ Rương)
+GameState.gems = {}        -- [ownerId] = số Gems (currency phụ; hiện chưa dùng nhiều)
 
 return GameState

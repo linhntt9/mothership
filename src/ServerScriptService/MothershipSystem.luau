@@ -100,6 +100,27 @@ function MothershipSystem.updateHealthBar(entry)
 	)
 end
 
+-- Tạo hình của Tàu Mẹ đang lái (theo activeHero). Không có -> con mặc định.
+function MothershipSystem.getHeroSkin(ownerId)
+	local id = GameState.activeHero[ownerId] or Config.DEFAULT_HERO
+	return Config.HERO_BY_ID[id] or Config.HERO_BY_ID[Config.DEFAULT_HERO]
+end
+
+-- Áp màu/vật liệu skin lên part. Ở TRẬN giữ màu phe (bạn/địch không lẫn), chỉ
+-- đổi vật liệu; ở SẢNH hiện full màu skin để khoe.
+local function applyHeroSkin(part, skin, inLobby, teamColor)
+	part.Material = (skin and skin.material) or Enum.Material.Neon
+	part.Reflectance = (skin and skin.reflectance) or 0
+	part.Color = (inLobby and skin and skin.color) or teamColor
+end
+
+-- Áp lại skin cho Tàu Mẹ đang tồn tại (khi đổi con ở sảnh — không cần respawn).
+function MothershipSystem.reskin(ownerId)
+	local entry = GameState.motherships[ownerId]
+	if not entry or not entry.part then return end
+	applyHeroSkin(entry.part, MothershipSystem.getHeroSkin(ownerId), not MatchState.isPlaying(), entry.teamColor)
+end
+
 -- Tạo 1 mothership (player hoặc bot). PUBLIC để CombatSystem/BotSystem dùng chung.
 function MothershipSystem.spawn(ownerId, isBot, spawnPos, teamColor)
 	teamColor = teamColor or Config.TEAM.PLAYER
@@ -120,8 +141,8 @@ function MothershipSystem.spawn(ownerId, isBot, spawnPos, teamColor)
 	-- Đĩa bay dẹt (ellipsoid): rộng & mỏng thay vì quả cầu
 	part.Size = Vector3.new(r * 2.8, r * 1.2, r * 2.8) * scale
 	part.Position = spawnPos
-	part.Color = teamColor
-	part.Material = Enum.Material.Neon
+	-- Tạo hình theo Tàu Mẹ đang lái (màu/vật liệu). Trận: giữ màu phe.
+	applyHeroSkin(part, MothershipSystem.getHeroSkin(ownerId), inLobby, teamColor)
 	part.CastShadow = not inLobby -- lobby: tắt bóng đổ
 	part:SetAttribute("OwnerUserId", ownerId)
 	part.Parent = folder

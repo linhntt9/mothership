@@ -20,6 +20,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Config = require(ReplicatedStorage.Config)
 local Remotes = require(ReplicatedStorage.Remotes)
+local ClientBus = require(script.Parent.ClientBus)
 
 local player = Players.LocalPlayer
 local uid = player.UserId
@@ -242,9 +243,75 @@ shopFoot.Text = "(bay ra khỏi cổng để đóng)"; shopFoot.Parent = shop
 local requestedMatch = false
 
 local SHOP_BODY = {
-	class = "Chọn class Tàu Mẹ: Hive Queen · Aegis Command · Artillery Nexus.\nMỗi class 1 buff nhóm + 1 kỹ năng chạm + 1 giảm giá tech.\n\n(Sắp có — Phase 2)",
 	skin = "Skin Tàu Mẹ · hạm đội · màu laser. Mua ở đây sẽ hiện ngay trên tàu bạn.\n\n(Sắp có — Phase 3)",
 }
+
+-------------------------------------------------------------------------------
+-- Panel RƯƠNG THƯỞNG (vào vùng "chest"): mở nhận Gems, có hồi chiêu.
+-------------------------------------------------------------------------------
+local CHEST_GOLD = Color3.fromRGB(255, 205, 70)
+local chestRemaining = 0 -- giây còn lại tới lần mở kế (server là nguồn chuẩn)
+
+local chestPanel = Instance.new("Frame")
+chestPanel.AnchorPoint = Vector2.new(0.5, 0.5); chestPanel.Position = UDim2.new(0.5, 0, 0.46, 0)
+chestPanel.Size = UDim2.new(0, 400, 0, 250); chestPanel.BackgroundColor3 = PANEL_BG; chestPanel.Visible = false
+local ccc = Instance.new("UICorner"); ccc.CornerRadius = UDim.new(0, 16); ccc.Parent = chestPanel
+local ccs = Instance.new("UIStroke"); ccs.Thickness = 2; ccs.Color = CHEST_GOLD; ccs.Transparency = 0.25; ccs.Parent = chestPanel
+chestPanel.Parent = gui
+
+local chestTitle = Instance.new("TextLabel")
+chestTitle.Position = UDim2.new(0, 0, 0, 16); chestTitle.Size = UDim2.new(1, 0, 0, 34)
+chestTitle.BackgroundTransparency = 1; chestTitle.Font = Enum.Font.GothamBlack; chestTitle.TextSize = 24
+chestTitle.Text = "🎁 RƯƠNG CLASS"; chestTitle.TextColor3 = CHEST_GOLD; chestTitle.Parent = chestPanel
+
+local chestReward = Instance.new("TextLabel")
+chestReward.Position = UDim2.new(0, 20, 0, 62); chestReward.Size = UDim2.new(1, -40, 0, 90)
+chestReward.BackgroundTransparency = 1; chestReward.Font = Enum.Font.GothamBold; chestReward.TextSize = 20
+chestReward.TextWrapped = true; chestReward.Text = "Mở rương để roll ra Tàu Mẹ mới!"
+chestReward.TextColor3 = Color3.fromRGB(210, 220, 235); chestReward.Parent = chestPanel
+
+local chestBtn = Instance.new("TextButton")
+chestBtn.AnchorPoint = Vector2.new(0.5, 1); chestBtn.Position = UDim2.new(0.5, 0, 1, -18)
+chestBtn.Size = UDim2.new(0, 220, 0, 48); chestBtn.BackgroundColor3 = Color3.fromRGB(210, 160, 40)
+chestBtn.Font = Enum.Font.GothamBlack; chestBtn.TextSize = 18; chestBtn.Text = "MỞ RƯƠNG"
+chestBtn.TextColor3 = Color3.fromRGB(30, 24, 10); chestBtn.Parent = chestPanel
+local cbtc = Instance.new("UICorner"); cbtc.CornerRadius = UDim.new(0, 10); cbtc.Parent = chestBtn
+
+local function refreshChest()
+	if chestRemaining > 0 then
+		chestBtn.AutoButtonColor = false
+		chestBtn.BackgroundColor3 = Color3.fromRGB(70, 74, 88)
+		chestBtn.TextColor3 = Color3.fromRGB(180, 188, 205)
+		chestBtn.Text = ("Chờ hồi ⏳ %ds"):format(math.ceil(chestRemaining))
+	else
+		chestBtn.AutoButtonColor = true
+		chestBtn.BackgroundColor3 = Color3.fromRGB(210, 160, 40)
+		chestBtn.TextColor3 = Color3.fromRGB(30, 24, 10)
+		chestBtn.Text = "MỞ RƯƠNG"
+	end
+end
+
+chestBtn.Activated:Connect(function()
+	if chestRemaining > 0 then return end
+	Remotes.OpenChest:FireServer()
+end)
+
+-- Server trả kết quả mở rương: (ok, reward{isNew,name,rarity,color}|nil, cooldown).
+Remotes.OpenChest.OnClientEvent:Connect(function(ok, reward, cooldown)
+	chestRemaining = cooldown or 0
+	if ok and reward then
+		if reward.isNew then
+			chestReward.Text = ("🚀 TÀU MẸ MỚI!\n%s\n(%s)"):format(reward.name, reward.rarity or "")
+		else
+			chestReward.Text = ("Trùng: %s\n(đã sở hữu — chờ con mới)"):format(reward.name)
+		end
+		chestReward.TextColor3 = reward.color or CHEST_GOLD
+	elseif not ok and (cooldown or 0) > 0 then
+		chestReward.Text = "Rương đang hồi. Quay lại sau nhé!"
+		chestReward.TextColor3 = Color3.fromRGB(210, 220, 235)
+	end
+	refreshChest()
+end)
 
 -------------------------------------------------------------------------------
 -- Phát hiện Tàu Mẹ vào vùng cổng 3D
@@ -264,17 +331,32 @@ end
 local current = nil
 local function applyZone(z)
 	if z == current then return end
+	-- Rời vùng CLASS -> đóng panel Heroes.
+	if current and current.id == "class" and (not z or z.id ~= "class") then
+		ClientBus.openHeroes:Fire(false)
+	end
 	current = z
 	if not z then
 		shop.Visible = false
+		chestPanel.Visible = false
 	elseif z.id == "gate" then
 		shop.Visible = false
+		chestPanel.Visible = false
 		if not requestedMatch then           -- vào cổng -> tự vào trận ngay
 			requestedMatch = true
 			showToast("Đang vào trận...")
 			Remotes.StartMatch:FireServer()
 		end
+	elseif z.id == "class" then
+		shop.Visible = false                 -- vùng CLASS mở panel Heroes riêng
+		chestPanel.Visible = false
+		ClientBus.openHeroes:Fire(true)
+	elseif z.id == "chest" then
+		shop.Visible = false                 -- vùng RƯƠNG mở panel thưởng
+		chestPanel.Visible = true
+		refreshChest()
 	else
+		chestPanel.Visible = false
 		shop.Visible = true
 		shopTitle.Text = z.label; shopTitle.TextColor3 = z.color
 		shopBody.Text = SHOP_BODY[z.id] or "Sắp có"
@@ -285,6 +367,11 @@ end
 local acc = 0
 RunService.RenderStepped:Connect(function(dt)
 	if not gui.Enabled then return end
+	-- Đếm lùi hồi chiêu rương (mượt từng frame; server đã đặt mốc chuẩn).
+	if chestRemaining > 0 then
+		chestRemaining = math.max(0, chestRemaining - dt)
+		if chestPanel.Visible then refreshChest() end
+	end
 	acc += dt
 	if acc < 0.1 then return end
 	acc = 0

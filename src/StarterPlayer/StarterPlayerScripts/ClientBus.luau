@@ -17,4 +17,7 @@ ClientBus.selectBuilding = Instance.new("BindableEvent")
 -- Fire() để huỷ chế độ đặt building (nút ✕ trên mobile).
 ClientBus.cancelBuild = Instance.new("BindableEvent")
 
+-- Fire(open: bool) mở/đóng panel Heroes (khi Tàu Mẹ vào/ra vùng CLASS ở sảnh).
+ClientBus.openHeroes = Instance.new("BindableEvent")
+
 return ClientBus

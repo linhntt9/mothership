@@ -48,6 +48,9 @@ local EVENT_NAMES = {
 	"StartMatch",      -- client -> server: bấm Play ở lobby -> vào trận
 	"ToLobby",         -- client -> server: về lại lobby (từ bảng kết thúc)
 	"MatchState",      -- server -> client: "lobby" | "playing" (đổi màn)
+	"SelectHero",      -- (Heroes) client -> server: chọn hero (heroId) -> buff nhóm quân
+	"HeroState",       -- (Heroes) server -> client: hero đang chọn (heroId | nil)
+	"OpenChest",       -- (Chest) client -> server: mở rương; server roll + reply (ok, reward, gems, cd)
 }
 
 local function getFolder()

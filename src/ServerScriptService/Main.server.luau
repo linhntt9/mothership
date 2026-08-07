@@ -42,6 +42,7 @@ local BuildingSystem = require(ServerScriptService.BuildingSystem)
 local PickupSystem = require(ServerScriptService.PickupSystem)
 local CombatSystem = require(ServerScriptService.CombatSystem)
 local BotSystem = require(ServerScriptService.BotSystem)
+local GameState = require(ServerScriptService.GameState)
 
 -- Bọc trong pcall để 1 system lỗi không kéo sập cả game (coding standard mục 6)
 local function safeInit(name, system)
@@ -164,11 +165,67 @@ Remotes.StartMatch.OnServerEvent:Connect(startMatch) -- bấm cổng "Vào trậ
 Remotes.Restart.OnServerEvent:Connect(startMatch)    -- "Chơi lại" ở bảng kết thúc
 Remotes.ToLobby.OnServerEvent:Connect(enterLobby)    -- "Lobby" ở bảng kết thúc
 
--- Người vào server: gửi trạng thái + spawn Tàu Mẹ đúng cảnh (sảnh hoặc trận).
+-- Người vào server: khởi tạo sở hữu Tàu Mẹ (mở sẵn con mặc định) + gửi trạng thái.
 Players.PlayerAdded:Connect(function(player)
+	local uid = player.UserId
+	GameState.ownedHeroes[uid] = GameState.ownedHeroes[uid] or { [Config.DEFAULT_HERO] = true }
+	GameState.activeHero[uid] = GameState.activeHero[uid] or Config.DEFAULT_HERO
 	Remotes.MatchState:FireClient(player, MatchState.isPlaying() and "playing" or "lobby")
+	Remotes.HeroState:FireClient(player, GameState.activeHero[uid], GameState.ownedHeroes[uid])
 	local pos = MatchState.isPlaying() and MothershipSystem.playerSpawnPos() or lobbyShipPos()
-	MothershipSystem.spawn(player.UserId, false, pos, Config.TEAM.PLAYER)
+	MothershipSystem.spawn(uid, false, pos, Config.TEAM.PLAYER)
+end)
+
+-- Chọn Tàu Mẹ để lái (chỉ con ĐÃ sở hữu). Đổi cả buff (quân spawn mới) lẫn tạo hình.
+Remotes.SelectHero.OnServerEvent:Connect(function(player, heroId)
+	local uid = player.UserId
+	if typeof(heroId) ~= "string" or not Config.HERO_BY_ID[heroId] then return end
+	local owned = GameState.ownedHeroes[uid] or {}
+	if not owned[heroId] then return end -- chưa sở hữu -> bỏ qua
+	GameState.activeHero[uid] = heroId
+	MothershipSystem.reskin(uid) -- đổi tạo hình Tàu Mẹ ngay ở sảnh
+	Remotes.HeroState:FireClient(player, heroId, owned)
+end)
+
+-- RƯƠNG CLASS ở sảnh: roll ra 1 Tàu Mẹ (theo weight/độ hiếm), CÓ THỂ trùng.
+-- Reply: (ok, reward{isNew,id,name,rarity,color}|nil, cooldownConLai). Chỉ ở LOBBY.
+local chestLastOpen = {} -- [uid] = tick() lần mở gần nhất
+local function rollHero()
+	local total = 0
+	for _, h in ipairs(Config.HEROES) do total += (h.weight or 0) end
+	local r = math.random() * total
+	for _, h in ipairs(Config.HEROES) do
+		r -= (h.weight or 0)
+		if r <= 0 then return h end
+	end
+	return Config.HEROES[#Config.HEROES]
+end
+Remotes.OpenChest.OnServerEvent:Connect(function(player)
+	local uid = player.UserId
+	if MatchState.isPlaying() then
+		Remotes.OpenChest:FireClient(player, false, nil, 0)
+		return
+	end
+	local now = tick()
+	local last = chestLastOpen[uid]
+	local cd = Config.CHEST.COOLDOWN
+	if last and (now - last) < cd then
+		Remotes.OpenChest:FireClient(player, false, nil, math.ceil(cd - (now - last)))
+		return
+	end
+	chestLastOpen[uid] = now
+
+	local h = rollHero()
+	local owned = GameState.ownedHeroes[uid] or {}
+	GameState.ownedHeroes[uid] = owned
+	local isNew = not owned[h.id]
+	owned[h.id] = true
+
+	Remotes.OpenChest:FireClient(player, true, {
+		isNew = isNew, id = h.id, name = h.name, rarity = h.rarity, color = h.color,
+	}, cd)
+	-- Cập nhật panel chọn Tàu Mẹ (owned mới) — giữ nguyên con đang lái.
+	Remotes.HeroState:FireClient(player, GameState.activeHero[uid], owned)
 end)
 
 -- Boot: vào thẳng lobby (dọn arena mà MapSystem.init vừa dựng, thay bằng sảnh).

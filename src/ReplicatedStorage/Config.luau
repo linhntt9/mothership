@@ -22,7 +22,7 @@ Config.MAP = {
 	-- (tinh thể phát sáng) để phân biệt với mặt đất trống (chỗ đặt Hub).
 	ORE_DEPOSIT_COUNT = 24,    -- nhiều mỏ cho map lớn 2500 (proto 500 dùng 5)
 	ORE_DEPOSIT_MIN_GAP = 130, -- khoảng cách tối thiểu giữa 2 mỏ (studs)
-	ORE_DEPOSIT_RADIUS = 8,   -- bán kính "mặt" mỏ (dùng để snap & kiểm tra đặt mine)
+	ORE_DEPOSIT_RADIUS = 15,  -- bán kính "mặt" mỏ = 1.25 × cỡ công trình (24) / 2 → đường kính 30
 
 	-- Spawn của player & bot nằm ở các GÓC map, cách tâm SPAWN_FRAC * nửa-map.
 	-- Server tính LIVE từ SIZE lúc spawn -> đổi SIZE rồi Chơi lại là spawn tự dãn
@@ -58,9 +58,16 @@ Config.LOBBY = {
 	MOVE_MULT = 1.7,                 -- lobby lái nhanh/mượt hơn (nhân vào tốc độ nền)
 	-- Vị trí 3 cổng trong sảnh. id dùng cho client mở đúng panel.
 	ZONES = {
-		{ id = "class", label = "CLASS SHOP", x = -95, z = -15,  color = Color3.fromRGB(120, 170, 255) },
+		{ id = "class", label = "TÀU MẸ", x = -95, z = -15,  color = Color3.fromRGB(120, 170, 255) },
 		{ id = "skin",  label = "SKIN SHOP",  x = 95,  z = -15,  color = Color3.fromRGB(210, 130, 255) },
+		{ id = "chest", label = "RƯƠNG CLASS", x = 0,  z = 48,   color = Color3.fromRGB(255, 205, 70) },
 		{ id = "gate",  label = "VÀO TRẬN",   x = 0,   z = -110, color = Color3.fromRGB(90, 220, 120) },
+	},
+	-- RƯƠNG CLASS ở sảnh: mở ra 1 Tàu Mẹ (roll theo weight/độ hiếm trong HEROES),
+	-- CÓ THỂ trùng con đã sở hữu. Chờ hồi COOLDOWN giây giữa 2 lần mở.
+	-- (Session-only; nối DataStore ở Phase meta sau.)
+	CHEST = {
+		COOLDOWN = 30,
 	},
 }
 
@@ -301,5 +308,73 @@ Config.ECONOMY = {
 	SELL_REFUND = 0.5,      -- bán building thu hồi 50% tổng scrap đã đầu tư
 	RAID_LOOT = 0.5,        -- (stretch) phá building địch -> attacker +50% build cost
 }
+
+-------------------------------------------------------------------------------
+-- MOTHERSHIPS (9 con = 3 CLASS × 3 chủng). Mỗi con Tàu Mẹ có:
+--   • passive ĐÁNH ĐỔI ±% (tăng 1 chỉ số nhóm này, giảm cùng cỡ nhóm khác) —
+--     tổng sức mạnh ~ giữ nguyên, chỉ đổi thiên hướng (tôn trọng BẤT DI: không
+--     buff vĩnh viễn phá khởi đầu cân bằng).
+--   • TẠO HÌNH riêng (màu + vật liệu) áp lên Tàu Mẹ khi lái.
+--   • độ hiếm + weight (tỉ lệ roll ra từ Rương Class).
+-- 3 CLASS map theo 3 vòng: Vanguard(SCREEN) / Guard(GUARD) / Artillery(CORE).
+-- SỞ HỮU qua Rương; chọn con để lái ở vùng "Tàu Mẹ" (panel class).
+-- (Nội bộ code vẫn gọi là "hero" = 1 Tàu Mẹ/class — giữ tên biến cho gọn.)
+-------------------------------------------------------------------------------
+local T = 0.18 -- biên độ đánh đổi chuẩn (±18%)
+
+Config.HEROES = {
+	-- ===== VANGUARD (SCREEN: Drone/Interceptor/Kamikaze) — họ xanh dương =====
+	{ id = "van_atk", cat = "Vanguard", name = "Swarm Lord", rarity = "Common", weight = 40,
+	  color = Color3.fromRGB(90, 200, 255), material = Enum.Material.Neon, reflectance = 0,
+	  up = { group = "SCREEN", stat = "dmg", pct = T }, down = { group = "CORE", stat = "dmg", pct = T },
+	  desc = "Vanguard +18% sát thương · đổi lấy Artillery −18% sát thương.\nDồn hoả lực ra tuyến ngoài, pháo yếu đi." },
+	{ id = "van_hp", cat = "Vanguard", name = "Overseer", rarity = "Rare", weight = 26,
+	  color = Color3.fromRGB(70, 150, 255), material = Enum.Material.Glass, reflectance = 0.1,
+	  up = { group = "SCREEN", stat = "hp", pct = T }, down = { group = "GUARD", stat = "hp", pct = T },
+	  desc = "Vanguard +18% máu · đổi lấy Guard −18% máu.\nBầy ngoài trâu hơn, tank mỏng hơn." },
+	{ id = "van_glass", cat = "Vanguard", name = "Locust Broodqueen", rarity = "Epic", weight = 12,
+	  color = Color3.fromRGB(150, 235, 255), material = Enum.Material.Neon, reflectance = 0.15,
+	  up = { group = "SCREEN", stat = "dmg", pct = 0.22 }, down = { group = "SCREEN", stat = "hp", pct = 0.16 },
+	  desc = "Vanguard +22% sát thương · đổi lấy chính Vanguard −16% máu.\nBầy pha lê: đấm rất rát nhưng giòn." },
+
+	-- ===== GUARD (GUARD: Destroyer/Battleship/Titan) — họ xanh lá =====
+	{ id = "grd_atk", cat = "Guard", name = "Warlord", rarity = "Common", weight = 40,
+	  color = Color3.fromRGB(120, 230, 140), material = Enum.Material.Neon, reflectance = 0,
+	  up = { group = "GUARD", stat = "dmg", pct = T }, down = { group = "SCREEN", stat = "dmg", pct = T },
+	  desc = "Guard +18% sát thương · đổi lấy Vanguard −18% sát thương.\nTuyến giữa đấm mạnh, bầy ngoài rát hơn." },
+	{ id = "grd_hp", cat = "Guard", name = "Aegis", rarity = "Rare", weight = 26,
+	  color = Color3.fromRGB(80, 200, 120), material = Enum.Material.Metal, reflectance = 0.3,
+	  up = { group = "GUARD", stat = "hp", pct = T }, down = { group = "CORE", stat = "hp", pct = T },
+	  desc = "Guard +18% máu · đổi lấy Artillery −18% máu.\nKhiên chắn dày hơn, pháo dễ vỡ hơn." },
+	{ id = "grd_tank", cat = "Guard", name = "Juggernaut", rarity = "Epic", weight = 12,
+	  color = Color3.fromRGB(150, 255, 170), material = Enum.Material.Neon, reflectance = 0.15,
+	  up = { group = "GUARD", stat = "hp", pct = 0.22 }, down = { group = "GUARD", stat = "dmg", pct = 0.16 },
+	  desc = "Guard +22% máu · đổi lấy chính Guard −16% sát thương.\nPháo đài: cực lì nhưng đấm chậm." },
+
+	-- ===== ARTILLERY (CORE: Frigate/Plasma/Siege) — họ cam/đỏ =====
+	{ id = "art_atk", cat = "Artillery", name = "Nexus", rarity = "Common", weight = 40,
+	  color = Color3.fromRGB(255, 170, 90), material = Enum.Material.Neon, reflectance = 0,
+	  up = { group = "CORE", stat = "dmg", pct = T }, down = { group = "GUARD", stat = "dmg", pct = T },
+	  desc = "Artillery +18% sát thương · đổi lấy Guard −18% sát thương.\nPháo nổ mạnh hơn, tank đấm nhẹ đi." },
+	{ id = "art_hp", cat = "Artillery", name = "Bulwark", rarity = "Rare", weight = 26,
+	  color = Color3.fromRGB(255, 130, 70), material = Enum.Material.Metal, reflectance = 0.3,
+	  up = { group = "CORE", stat = "hp", pct = T }, down = { group = "SCREEN", stat = "hp", pct = T },
+	  desc = "Artillery +18% máu · đổi lấy Vanguard −18% máu.\nPháo lì đòn hơn, bầy ngoài giòn hơn." },
+	{ id = "art_glass", cat = "Artillery", name = "Siege Oracle", rarity = "Epic", weight = 12,
+	  color = Color3.fromRGB(255, 90, 120), material = Enum.Material.Neon, reflectance = 0.15,
+	  up = { group = "CORE", stat = "dmg", pct = 0.22 }, down = { group = "CORE", stat = "hp", pct = 0.16 },
+	  desc = "Artillery +22% sát thương · đổi lấy chính Artillery −16% máu.\nĐại pháo pha lê: huỷ diệt nhưng mỏng manh." },
+}
+Config.HERO_CATS = { "Vanguard", "Guard", "Artillery" }
+Config.DEFAULT_HERO = "van_atk" -- Tàu Mẹ mở sẵn cho người chơi mới (Common Vanguard)
+-- Màu chữ theo độ hiếm (client dùng cho thẻ + kết quả rương).
+Config.RARITY_COLOR = {
+	Common = Color3.fromRGB(190, 200, 215),
+	Rare   = Color3.fromRGB(90, 170, 255),
+	Epic   = Color3.fromRGB(200, 120, 255),
+}
+-- Tra Tàu Mẹ theo id (dựng sẵn cho server/client).
+Config.HERO_BY_ID = {}
+for _, h in ipairs(Config.HEROES) do Config.HERO_BY_ID[h.id] = h end
 
 return Config

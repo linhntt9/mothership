@@ -106,6 +106,30 @@ local function makeUnitPart(unitType, pos, teamColor)
 	return p
 end
 
+-- Hệ số đánh đổi từ hero đang chọn của owner, áp cho unit thuộc `ring`.
+-- Mỗi hero TĂNG 1 chỉ số nhóm (up) và GIẢM cùng cỡ ở nhóm khác (down).
+-- Trả về (dmgMult, hpMult). Owner không chọn hero (hoặc là bot) -> 1, 1.
+function FleetSystem.getHeroBuff(ownerId, ring)
+	local heroId = GameState.activeHero[ownerId]
+	local hero = heroId and Config.HERO_BY_ID[heroId]
+	if not hero then
+		return 1, 1
+	end
+	local dmgMult, hpMult = 1, 1
+	local function apply(side, sign)
+		if side and side.group == ring then
+			if side.stat == "dmg" then
+				dmgMult += sign * side.pct
+			else -- "hp"
+				hpMult += sign * side.pct
+			end
+		end
+	end
+	apply(hero.up, 1)
+	apply(hero.down, -1)
+	return dmgMult, hpMult
+end
+
 -- Spawn 1 unit cho owner. ignoreCap=true để bỏ qua giới hạn cap (bot/debug).
 -- Trả về true nếu thành công.
 function FleetSystem.spawnUnit(ownerId, unitType, ignoreCap)
@@ -128,6 +152,10 @@ function FleetSystem.spawnUnit(ownerId, unitType, ignoreCap)
 	-- Spawn ngay tại vị trí Tàu Mẹ rồi để nó bay ra ring cho đẹp
 	local part = makeUnitPart(unitType, owner.part.Position, owner.teamColor)
 
+	-- Buff hero (bị động, theo nhóm quân): nhân dmg/hp lúc spawn.
+	local dmgMult, hpMult = FleetSystem.getHeroBuff(ownerId, stats.ring)
+	local hp = math.floor(stats.hp * hpMult + 0.5)
+
 	local vis = VISUAL[unitType]
 	local unit = {
 		kind = "Unit",          -- dùng cho CombatSystem phân loại target
@@ -136,12 +164,12 @@ function FleetSystem.spawnUnit(ownerId, unitType, ignoreCap)
 		ring = stats.ring,      -- "SCREEN" | "GUARD" | "CORE"
 		part = part,
 		radius = math.max(vis.size.X, vis.size.Z) / 2, -- bán kính va chạm (separation)
-		hp = stats.hp,
-		maxHp = stats.hp,
+		hp = hp,
+		maxHp = hp,
 		speed = stats.speed,
 		weight = weight,
 		-- Combat
-		dmg = stats.dmg,
+		dmg = math.floor(stats.dmg * dmgMult + 0.5),
 		range = stats.range,
 		fireRate = stats.fireRate,
 		aoe = stats.aoeRadius or 0,
