@@ -51,6 +51,8 @@ local EVENT_NAMES = {
 	"SelectHero",      -- (Heroes) client -> server: chọn hero (heroId) -> buff nhóm quân
 	"HeroState",       -- (Heroes) server -> client: hero đang chọn (heroId | nil)
 	"OpenChest",       -- (Chest) client -> server: mở rương; server roll + reply (ok, reward, gems, cd)
+	"GemUpdate",       -- server -> client: số gem hiện tại
+	"BuildingAlert",   -- server -> client: công trình của mình bị đánh (vị trí) -> minimap báo động
 }
 
 local function getFolder()

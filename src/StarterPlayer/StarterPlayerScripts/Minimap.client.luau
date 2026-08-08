@@ -29,7 +29,7 @@ local player = Players.LocalPlayer
 local playerGui = player:WaitForChild("PlayerGui")
 local myId = player.UserId
 
-local FRAME = 200 -- kích thước minimap (px)
+local FRAME = 132 -- kích thước minimap (px) — nhỏ gọn ở góc dưới-phải
 
 -- Màu chấm
 local COL_DEPOSIT   = Color3.fromRGB(255, 210, 80)
@@ -55,8 +55,8 @@ end)
 
 local mapFrame = Instance.new("Frame")
 mapFrame.Name = "Map"
-mapFrame.AnchorPoint = Vector2.new(0, 0)
-mapFrame.Position = UDim2.new(0, 12, 0, 12)
+mapFrame.AnchorPoint = Vector2.new(1, 1)
+mapFrame.Position = UDim2.new(1, -12, 1, -12) -- góc dưới-phải
 mapFrame.Size = UDim2.fromOffset(FRAME, FRAME)
 mapFrame.BackgroundColor3 = Color3.fromRGB(15, 18, 28)
 mapFrame.BackgroundTransparency = 0.25
@@ -127,46 +127,99 @@ local function placeDot(x, z, sizePx, color, strokeColor)
 end
 
 -------------------------------------------------------------------------------
+-- Mũi tên chỉ HƯỚNG DI CHUYỂN của Tàu Mẹ mình + báo động khi công trình bị đánh.
+-------------------------------------------------------------------------------
+local arrow = Instance.new("TextLabel")
+arrow.AnchorPoint = Vector2.new(0.5, 0.5)
+arrow.Size = UDim2.fromOffset(18, 18)
+arrow.BackgroundTransparency = 1
+arrow.Font = Enum.Font.GothamBlack
+arrow.TextSize = 18
+arrow.Text = "▲"
+arrow.TextColor3 = COL_MY_SHIP
+arrow.ZIndex = 6
+arrow.Visible = false
+arrow.Parent = mapFrame
+local lastShipPos = nil
+local headingDeg = 0
+
+-- Công trình của mình bị đánh -> chấm đỏ nhấp nháy trên minimap tại chỗ đó.
+Remotes.BuildingAlert.OnClientEvent:Connect(function(pos)
+	if typeof(pos) ~= "Vector3" then return end
+	local px, py = toMini(pos.X, pos.Z)
+	local a = Instance.new("Frame")
+	a.AnchorPoint = Vector2.new(0.5, 0.5)
+	a.Position = UDim2.fromOffset(px, py)
+	a.Size = UDim2.fromOffset(9, 9)
+	a.BackgroundColor3 = Color3.fromRGB(255, 60, 60)
+	a.BorderSizePixel = 0
+	a.ZIndex = 7
+	local c = Instance.new("UICorner"); c.CornerRadius = UDim.new(1, 0); c.Parent = a
+	a.Parent = mapFrame
+	game:GetService("TweenService"):Create(
+		a, TweenInfo.new(0.4, Enum.EasingStyle.Quad, Enum.EasingDirection.Out, 3, true),
+		{ Size = UDim2.fromOffset(22, 22), BackgroundTransparency = 0.6 }
+	):Play()
+	game:GetService("Debris"):AddItem(a, 2.4)
+end)
+
+-------------------------------------------------------------------------------
+-- La bàn (giữa-trên): vòng + kim chỉ HƯỚNG Tàu Mẹ đang đi; chữ N (bắc = trên).
+-------------------------------------------------------------------------------
+local compass = Instance.new("Frame")
+compass.AnchorPoint = Vector2.new(0.5, 0)
+compass.Position = UDim2.new(0.5, 0, 0, 12)
+compass.Size = UDim2.fromOffset(56, 56)
+compass.BackgroundColor3 = Color3.fromRGB(15, 18, 28)
+compass.BackgroundTransparency = 0.25
+local ccc = Instance.new("UICorner"); ccc.CornerRadius = UDim.new(1, 0); ccc.Parent = compass
+local ccs = Instance.new("UIStroke"); ccs.Color = Color3.fromRGB(90, 110, 140); ccs.Transparency = 0.3; ccs.Parent = compass
+compass.Parent = gui
+local nMark = Instance.new("TextLabel")
+nMark.AnchorPoint = Vector2.new(0.5, 0); nMark.Position = UDim2.new(0.5, 0, 0, 1); nMark.Size = UDim2.fromOffset(14, 14)
+nMark.BackgroundTransparency = 1; nMark.Font = Enum.Font.GothamBold; nMark.TextSize = 12
+nMark.Text = "N"; nMark.TextColor3 = Color3.fromRGB(255, 120, 120); nMark.Parent = compass
+local needle = Instance.new("TextLabel")
+needle.AnchorPoint = Vector2.new(0.5, 0.5); needle.Position = UDim2.fromScale(0.5, 0.5); needle.Size = UDim2.fromOffset(44, 44)
+needle.BackgroundTransparency = 1; needle.Font = Enum.Font.GothamBlack; needle.TextSize = 36
+needle.Text = "↑"; needle.TextColor3 = COL_MY_SHIP; needle.Parent = compass
+
+-------------------------------------------------------------------------------
 -- Vẽ lại mỗi ~0.08s (12Hz là đủ mượt cho minimap, nhẹ CPU)
 -------------------------------------------------------------------------------
 local function redraw()
 	used = 0
 
-	-- 1) Mỏ (ore deposit)
-	local deposits = Workspace:FindFirstChild("OreDeposits")
-	if deposits then
-		for _, part in ipairs(deposits:GetChildren()) do
-			if part:IsA("BasePart") and part.Name == "OreDeposit" then
-				placeDot(part.Position.X, part.Position.Z, 5, COL_DEPOSIT, nil)
-			end
-		end
-	end
-
-	-- 2) Building (mình vs địch)
+	-- CHỈ hiện của MÌNH: nhà của mình + Tàu Mẹ của mình (không lộ bot/mỏ/địch).
+	-- 1) Building của mình
 	local buildings = Workspace:FindFirstChild("Buildings")
 	if buildings then
 		for _, part in ipairs(buildings:GetChildren()) do
-			if part:IsA("BasePart") then
-				local owner = part:GetAttribute("OwnerUserId")
-				local col = (owner == myId) and COL_MY_BLD or COL_ENEMY_BLD
-				placeDot(part.Position.X, part.Position.Z, 6, col, nil)
+			if part:IsA("BasePart") and part:GetAttribute("OwnerUserId") == myId then
+				placeDot(part.Position.X, part.Position.Z, 6, COL_MY_BLD, nil)
 			end
 		end
 	end
 
-	-- 3) Tàu Mẹ — mình vẽ to + viền trắng, địch dùng màu phe của nó
+	-- 2) Tàu Mẹ của mình -> MŨI TÊN chỉ hướng đi (không phải chấm tròn)
 	local ships = Workspace:FindFirstChild("Motherships")
-	if ships then
-		for _, part in ipairs(ships:GetChildren()) do
-			if part:IsA("BasePart") and part.Name:match("^Mothership_") then
-				local owner = part:GetAttribute("OwnerUserId")
-				if owner == myId then
-					placeDot(part.Position.X, part.Position.Z, 13, COL_MY_SHIP, Color3.fromRGB(255, 255, 255))
-				else
-					placeDot(part.Position.X, part.Position.Z, 10, part.Color, nil)
-				end
+	local myShip = ships and ships:FindFirstChild("Mothership_" .. myId)
+	if myShip then
+		local mp = myShip.Position
+		local px, py = toMini(mp.X, mp.Z)
+		arrow.Position = UDim2.fromOffset(px, py)
+		arrow.Visible = true
+		if lastShipPos then
+			local dx, dz = mp.X - lastShipPos.X, mp.Z - lastShipPos.Z
+			if (dx * dx + dz * dz) > 0.25 then -- đang di chuyển -> cập nhật hướng
+				headingDeg = math.deg(math.atan2(dx, -dz))
 			end
 		end
+		arrow.Rotation = headingDeg
+		needle.Rotation = headingDeg -- kim la bàn cùng hướng
+		lastShipPos = mp
+	else
+		arrow.Visible = false
 	end
 
 	-- Ẩn các chấm thừa của lần vẽ trước

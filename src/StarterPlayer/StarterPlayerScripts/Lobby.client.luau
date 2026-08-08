@@ -254,7 +254,7 @@ local chestRemaining = 0 -- giây còn lại tới lần mở kế (server là n
 
 local chestPanel = Instance.new("Frame")
 chestPanel.AnchorPoint = Vector2.new(0.5, 0.5); chestPanel.Position = UDim2.new(0.5, 0, 0.46, 0)
-chestPanel.Size = UDim2.new(0, 400, 0, 250); chestPanel.BackgroundColor3 = PANEL_BG; chestPanel.Visible = false
+chestPanel.Size = UDim2.new(0, 420, 0, 360); chestPanel.BackgroundColor3 = PANEL_BG; chestPanel.Visible = false
 local ccc = Instance.new("UICorner"); ccc.CornerRadius = UDim.new(0, 16); ccc.Parent = chestPanel
 local ccs = Instance.new("UIStroke"); ccs.Thickness = 2; ccs.Color = CHEST_GOLD; ccs.Transparency = 0.25; ccs.Parent = chestPanel
 chestPanel.Parent = gui
@@ -262,10 +262,31 @@ chestPanel.Parent = gui
 local chestTitle = Instance.new("TextLabel")
 chestTitle.Position = UDim2.new(0, 0, 0, 16); chestTitle.Size = UDim2.new(1, 0, 0, 34)
 chestTitle.BackgroundTransparency = 1; chestTitle.Font = Enum.Font.GothamBlack; chestTitle.TextSize = 24
-chestTitle.Text = "🎁 RƯƠNG CLASS"; chestTitle.TextColor3 = CHEST_GOLD; chestTitle.Parent = chestPanel
+chestTitle.Text = "🎁 RƯƠNG TÀU MẸ"; chestTitle.TextColor3 = CHEST_GOLD; chestTitle.Parent = chestPanel
+
+-- Bảng tỉ lệ ra (tính từ weight trong Config.HEROES).
+local dropLabel = Instance.new("TextLabel")
+dropLabel.Position = UDim2.new(0, 20, 0, 54); dropLabel.Size = UDim2.new(1, -40, 0, 150)
+dropLabel.BackgroundTransparency = 1; dropLabel.Font = Enum.Font.Gotham; dropLabel.TextSize = 13
+dropLabel.TextXAlignment = Enum.TextXAlignment.Left; dropLabel.TextYAlignment = Enum.TextYAlignment.Top
+dropLabel.RichText = true; dropLabel.TextColor3 = Color3.fromRGB(210, 218, 232)
+dropLabel.Parent = chestPanel
+do
+	local total = 0
+	for _, h in ipairs(Config.HEROES) do total += (h.weight or 0) end
+	local lines = { "<b>Tỉ lệ ra:</b>" }
+	for _, h in ipairs(Config.HEROES) do
+		local pct = total > 0 and (h.weight or 0) / total * 100 or 0
+		local col = (Config.RARITY_COLOR and Config.RARITY_COLOR[h.rarity]) or Color3.fromRGB(200, 200, 200)
+		local hex = string.format("#%02X%02X%02X",
+			math.floor(col.R * 255), math.floor(col.G * 255), math.floor(col.B * 255))
+		table.insert(lines, ("<font color=\"%s\">%s — %.1f%%</font>"):format(hex, h.name, pct))
+	end
+	dropLabel.Text = table.concat(lines, "\n")
+end
 
 local chestReward = Instance.new("TextLabel")
-chestReward.Position = UDim2.new(0, 20, 0, 62); chestReward.Size = UDim2.new(1, -40, 0, 90)
+chestReward.Position = UDim2.new(0, 20, 0, 210); chestReward.Size = UDim2.new(1, -40, 0, 66)
 chestReward.BackgroundTransparency = 1; chestReward.Font = Enum.Font.GothamBold; chestReward.TextSize = 20
 chestReward.TextWrapped = true; chestReward.Text = "Mở rương để roll ra Tàu Mẹ mới!"
 chestReward.TextColor3 = Color3.fromRGB(210, 220, 235); chestReward.Parent = chestPanel
@@ -296,10 +317,123 @@ chestBtn.Activated:Connect(function()
 	Remotes.OpenChest:FireServer()
 end)
 
+-- Hiệu ứng GACHA: orb quay hồi hộp -> flash màu rarity -> thẻ Tàu Mẹ bật ra.
+local function playGachaReveal(reward)
+	local TweenService = game:GetService("TweenService")
+	local Debris = game:GetService("Debris")
+	local rarity = reward.rarity or "Common"
+	local rarCol = (Config.RARITY_COLOR and Config.RARITY_COLOR[rarity]) or CHEST_GOLD
+	local skinCol = reward.color or CHEST_GOLD
+
+	local ov = Instance.new("Frame")
+	ov.Size = UDim2.fromScale(1, 1); ov.BackgroundColor3 = Color3.new(0, 0, 0)
+	ov.BackgroundTransparency = 1; ov.ZIndex = 50; ov.Parent = gui
+	TweenService:Create(ov, TweenInfo.new(0.3), { BackgroundTransparency = 0.4 }):Play()
+
+	-- Orb quay (giai đoạn hồi hộp)
+	local orb = Instance.new("Frame")
+	orb.AnchorPoint = Vector2.new(0.5, 0.5); orb.Position = UDim2.new(0.5, 0, 0.45, 0)
+	orb.Size = UDim2.new(0, 24, 0, 24); orb.BackgroundColor3 = CHEST_GOLD
+	orb.Rotation = 0; orb.ZIndex = 51; orb.Parent = ov
+	local oc = Instance.new("UICorner"); oc.CornerRadius = UDim.new(0, 6); oc.Parent = orb
+	local os_ = Instance.new("UIStroke"); os_.Color = Color3.new(1, 1, 1); os_.Thickness = 2; os_.Parent = orb
+
+	local label = Instance.new("TextLabel")
+	label.AnchorPoint = Vector2.new(0.5, 0.5); label.Position = UDim2.new(0.5, 0, 0.66, 0)
+	label.Size = UDim2.new(0, 500, 0, 40); label.BackgroundTransparency = 1
+	label.Font = Enum.Font.GothamBlack; label.TextSize = 26; label.Text = "Đang mở..."
+	label.TextColor3 = Color3.fromRGB(230, 230, 240); label.ZIndex = 51; label.Parent = ov
+
+	TweenService:Create(orb, TweenInfo.new(1.3, Enum.EasingStyle.Quad), {
+		Size = UDim2.new(0, 130, 0, 130), Rotation = 900,
+	}):Play()
+	task.spawn(function()
+		local cols = { Color3.fromRGB(190, 200, 215), Color3.fromRGB(90, 180, 255), Color3.fromRGB(200, 120, 255), CHEST_GOLD }
+		for i = 1, 11 do
+			if not ov.Parent then return end
+			orb.BackgroundColor3 = cols[(i % #cols) + 1]
+			task.wait(0.11)
+		end
+	end)
+
+	task.delay(1.35, function()
+		if not ov.Parent then return end
+		orb:Destroy()
+
+		-- Flash màu rarity
+		local flash = Instance.new("Frame")
+		flash.Size = UDim2.fromScale(1, 1); flash.BackgroundColor3 = rarCol
+		flash.BackgroundTransparency = 0.05; flash.ZIndex = 52; flash.Parent = ov
+		TweenService:Create(flash, TweenInfo.new(0.55), { BackgroundTransparency = 1 }):Play()
+		Debris:AddItem(flash, 0.6)
+
+		-- Thẻ kết quả bật ra
+		local card = Instance.new("Frame")
+		card.AnchorPoint = Vector2.new(0.5, 0.5); card.Position = UDim2.new(0.5, 0, 0.45, 0)
+		card.Size = UDim2.new(0, 0, 0, 0); card.BackgroundColor3 = Color3.fromRGB(24, 28, 40)
+		card.ZIndex = 53; card.Parent = ov
+		local cc = Instance.new("UICorner"); cc.CornerRadius = UDim.new(0, 18); cc.Parent = card
+		local cs = Instance.new("UIStroke"); cs.Color = rarCol; cs.Thickness = 3; cs.Parent = card
+
+		local sw = Instance.new("Frame"); sw.AnchorPoint = Vector2.new(0.5, 0)
+		sw.Position = UDim2.new(0.5, 0, 0, 24); sw.Size = UDim2.new(0, 96, 0, 96)
+		sw.BackgroundColor3 = skinCol; sw.ZIndex = 54; sw.Parent = card
+		local swc = Instance.new("UICorner"); swc.CornerRadius = UDim.new(1, 0); swc.Parent = sw
+		local sws = Instance.new("UIStroke"); sws.Color = Color3.new(1, 1, 1); sws.Thickness = 2; sws.Transparency = 0.3; sws.Parent = sw
+
+		local badge = Instance.new("TextLabel"); badge.Position = UDim2.new(0, 0, 0, 130)
+		badge.Size = UDim2.new(1, 0, 0, 22); badge.BackgroundTransparency = 1
+		badge.Font = Enum.Font.GothamBlack; badge.TextSize = 16
+		badge.Text = reward.isNew and "★ TÀU MẸ MỚI ★" or "TRÙNG (đã sở hữu)"
+		badge.TextColor3 = reward.isNew and Color3.fromRGB(120, 255, 150) or Color3.fromRGB(180, 188, 205)
+		badge.ZIndex = 54; badge.Parent = card
+
+		local nm = Instance.new("TextLabel"); nm.Position = UDim2.new(0, 0, 0, 154)
+		nm.Size = UDim2.new(1, 0, 0, 30); nm.BackgroundTransparency = 1
+		nm.Font = Enum.Font.GothamBlack; nm.TextSize = 24; nm.Text = reward.name
+		nm.TextColor3 = skinCol; nm.ZIndex = 54; nm.Parent = card
+
+		local rr = Instance.new("TextLabel"); rr.Position = UDim2.new(0, 0, 0, 186)
+		rr.Size = UDim2.new(1, 0, 0, 20); rr.BackgroundTransparency = 1
+		rr.Font = Enum.Font.GothamBold; rr.TextSize = 15; rr.Text = string.upper(rarity)
+		rr.TextColor3 = rarCol; rr.ZIndex = 54; rr.Parent = card
+
+		local hint = Instance.new("TextLabel"); hint.AnchorPoint = Vector2.new(0.5, 1)
+		hint.Position = UDim2.new(0.5, 0, 1, -12); hint.Size = UDim2.new(1, 0, 0, 18)
+		hint.BackgroundTransparency = 1; hint.Font = Enum.Font.Gotham; hint.TextSize = 12
+		hint.Text = "Bấm để đóng"; hint.TextColor3 = Color3.fromRGB(150, 158, 175); hint.ZIndex = 54; hint.Parent = card
+
+		TweenService:Create(card, TweenInfo.new(0.45, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
+			Size = UDim2.new(0, 300, 0, 236),
+		}):Play()
+		-- Epic/Rare: nhấp viền cho lung linh
+		if rarity ~= "Common" then
+			task.spawn(function()
+				while ov.Parent do
+					TweenService:Create(cs, TweenInfo.new(0.6), { Thickness = 6 }):Play(); task.wait(0.6)
+					TweenService:Create(cs, TweenInfo.new(0.6), { Thickness = 3 }):Play(); task.wait(0.6)
+				end
+			end)
+		end
+
+		local closeBtn = Instance.new("TextButton"); closeBtn.Size = UDim2.fromScale(1, 1)
+		closeBtn.BackgroundTransparency = 1; closeBtn.Text = ""; closeBtn.ZIndex = 55; closeBtn.Parent = ov
+		local closed = false
+		local function doClose()
+			if closed then return end; closed = true
+			TweenService:Create(ov, TweenInfo.new(0.25), { BackgroundTransparency = 1 }):Play()
+			Debris:AddItem(ov, 0.3)
+		end
+		closeBtn.Activated:Connect(doClose)
+		task.delay(4.5, doClose)
+	end)
+end
+
 -- Server trả kết quả mở rương: (ok, reward{isNew,name,rarity,color}|nil, cooldown).
 Remotes.OpenChest.OnClientEvent:Connect(function(ok, reward, cooldown)
 	chestRemaining = cooldown or 0
 	if ok and reward then
+		playGachaReveal(reward) -- hiệu ứng gacha
 		if reward.isNew then
 			chestReward.Text = ("🚀 TÀU MẸ MỚI!\n%s\n(%s)"):format(reward.name, reward.rarity or "")
 		else
@@ -331,10 +465,6 @@ end
 local current = nil
 local function applyZone(z)
 	if z == current then return end
-	-- Rời vùng CLASS -> đóng panel Heroes.
-	if current and current.id == "class" and (not z or z.id ~= "class") then
-		ClientBus.openHeroes:Fire(false)
-	end
 	current = z
 	if not z then
 		shop.Visible = false
@@ -348,11 +478,8 @@ local function applyZone(z)
 			Remotes.StartMatch:FireServer()
 		end
 	elseif z.id == "class" then
-		shop.Visible = false                 -- vùng CLASS mở panel Heroes riêng
-		chestPanel.Visible = false
-		ClientBus.openHeroes:Fire(true)
-	elseif z.id == "chest" then
-		shop.Visible = false                 -- vùng RƯƠNG mở panel thưởng
+		-- Zone TÀU MẸ = rương gacha (mở hòm roll Tàu Mẹ + xem tỉ lệ).
+		shop.Visible = false
 		chestPanel.Visible = true
 		refreshChest()
 	else

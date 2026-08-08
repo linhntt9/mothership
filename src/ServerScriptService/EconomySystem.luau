@@ -53,6 +53,26 @@ function EconomySystem.add(ownerId, amount)
 	EconomySystem.sendScrapUpdate(ownerId)
 end
 
+-- GEM (thưởng khi hạ Tàu Mẹ). Lưu trên entry.gems.
+function EconomySystem.getGems(ownerId)
+	local e = GameState.motherships[ownerId]
+	return e and e.gems or 0
+end
+
+function EconomySystem.sendGemUpdate(ownerId)
+	local player = Players:GetPlayerByUserId(ownerId)
+	if player then
+		Remotes.GemUpdate:FireClient(player, math.floor(EconomySystem.getGems(ownerId)))
+	end
+end
+
+function EconomySystem.addGem(ownerId, amount)
+	local e = GameState.motherships[ownerId]
+	if not e then return end
+	e.gems = (e.gems or 0) + amount
+	EconomySystem.sendGemUpdate(ownerId)
+end
+
 -- Tổng income/giây của owner (đọc thẳng Config theo tier -> tune sống được).
 local function incomeOf(ownerId)
 	local total = 0
@@ -143,6 +163,7 @@ function EconomySystem.init()
 			for ownerId, e in pairs(GameState.motherships) do
 				if not e.isBot then
 					EconomySystem.sendScrapUpdate(ownerId)
+					EconomySystem.sendGemUpdate(ownerId)
 				end
 			end
 		end

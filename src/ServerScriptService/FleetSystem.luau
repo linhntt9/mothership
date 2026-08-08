@@ -29,6 +29,7 @@ local Config = require(ReplicatedStorage.Config)
 local Util = require(ReplicatedStorage.Util)
 local Remotes = require(ReplicatedStorage.Remotes)
 local GameState = require(script.Parent.GameState)
+local MapSystem = require(script.Parent.MapSystem)
 
 local FleetSystem = {}
 
@@ -196,19 +197,38 @@ local function cleanupUnits()
 	local changedOwners = {}
 	for i = #GameState.units, 1, -1 do
 		local u = GameState.units[i]
-		local owner = GameState.motherships[u.ownerId]
 		local dead = (not u.part) or (not u.part.Parent)
-		local ownerGone = (not owner) or (not owner.alive)
-		if dead or ownerGone then
-			if u.part and u.part.Parent then
-				u.part:Destroy()
-			end
+		local remove = dead
+		if not dead and not u.remnant then
+			-- Không phải tàn quân: mất chủ (Tàu Mẹ chết/rời) -> huỷ.
+			-- (Tàu Mẹ chết đã convertToRemnants nên quân của nó thành tàn quân, giữ lại.)
+			local owner = GameState.motherships[u.ownerId]
+			remove = (not owner) or (not owner.alive)
+		end
+		if remove then
+			if u.part and u.part.Parent then u.part:Destroy() end
 			table.remove(GameState.units, i)
 			changedOwners[u.ownerId] = true
 		end
 	end
 	for ownerId in pairs(changedOwners) do
 		FleetSystem.sendFleetUpdate(ownerId)
+	end
+end
+
+-- Biến toàn bộ quân của owner (Tàu Mẹ vừa chết) thành TÀN QUÂN trung lập:
+-- đứng im (ownerId=0), xám, không bắn/không bị bắn; ai chạm vào thì chiếm.
+function FleetSystem.convertToRemnants(ownerId)
+	for _, u in ipairs(GameState.units) do
+		if u.ownerId == ownerId then
+			u.ownerId = 0
+			u.remnant = true
+			u.armed = nil
+			u.cooldown = 0
+			if u.part then
+				u.part.Color = Color3.fromRGB(155, 158, 165) -- xám = trung lập
+			end
+		end
 	end
 end
 
@@ -235,6 +255,8 @@ local function steerUnit(u, target, faceDir, dt)
 		local step = math.min(speed * dt, dist)
 		newPos = pos + delta.Unit * step
 	end
+	-- Unit không xuyên mỏ / công trình / Tàu Mẹ (unit-vs-unit do separationPass lo).
+	newPos = MapSystem.resolveSolids(newPos, u.radius or 2, nil)
 	-- Xoay mặt hướng ra ngoài (mũi tên chĩa ra); nếu không có hướng thì chỉ dời vị trí
 	if faceDir and (faceDir.X ~= 0 or faceDir.Z ~= 0) then
 		part.CFrame = CFrame.lookAt(newPos, newPos + Vector3.new(faceDir.X, 0, faceDir.Z))
@@ -259,17 +281,23 @@ end
 --     (ổn định slot, không giật).
 --   - Vòng r chứa capacity = chu vi / UNIT_SPACING unit; đầy thì nở ra r+RING_GAP.
 -- => hạm đội càng đông càng nở nhiều vòng ra ngoài, nhìn đồ sộ.
+-- Buffer TÁI SỬ DỤNG (tránh cấp phát bảng mỗi frame -> giảm GC). An toàn vì
+-- server chạy đơn luồng và các hàm dùng buffer không lồng nhau.
+local _b1, _b2, _b3 = {}, {}, {}
+local _ordered = {}
+
 local function packRings(list, center, dt)
 	local n = #list
 	if n == 0 then return end
 
 	-- Bucket theo lớp để sắp ổn định (không dùng table.sort tránh đảo chỗ mỗi frame)
-	local buckets = { {}, {}, {} }
+	table.clear(_b1); table.clear(_b2); table.clear(_b3); table.clear(_ordered)
+	local buckets = { _b1, _b2, _b3 }
 	for _, u in ipairs(list) do
 		local L = RING_LAYER[u.ring] or 3
 		table.insert(buckets[L], u)
 	end
-	local ordered = {}
+	local ordered = _ordered
 	for L = 1, 3 do
 		for _, u in ipairs(buckets[L]) do
 			table.insert(ordered, u)
@@ -320,49 +348,44 @@ local function moveToward(cur, target, maxStep)
 	end
 end
 
+-- Buffer tái sử dụng cho gom unit theo owner + 2 cánh Split.
+local _ownerList = {}
+local _wingL, _wingR = {}, {}
+
 -- Cập nhật vị trí toàn bộ unit theo quỹ đạo (gọi mỗi Heartbeat).
 local function updateFormation(dt)
 	-- Góc quay chung, chậm -> cả hạm đội "sống"
 	globalTheta = (globalTheta + Config.FLEET.ORBIT_SPIN * dt) % (2 * math.pi)
 
-	-- Gom unit theo owner (giữ thứ tự list -> slot ổn định, không giật).
-	-- BỎ QUA Kamikaze đã kích hoạt (u.armed): nó rời formation, CombatSystem tự lái.
-	local groups = {}
-	for _, u in ipairs(GameState.units) do
-		if not u.armed then
-			groups[u.ownerId] = groups[u.ownerId] or {}
-			table.insert(groups[u.ownerId], u)
-		end
-	end
-
 	local rampRate = Config.FLEET.SPLIT_DIST / Config.FLEET.SPLIT_RAMP -- studs/s
 
-	for ownerId, list in pairs(groups) do
-		local owner = GameState.motherships[ownerId]
-		if owner and owner.alive then
-			local center = owner.part.Position
-
-			-- Ramp splitDist về mục tiêu (SPLIT_DIST nếu đang giữ Space, else 0)
-			local wantDist = owner.split and Config.FLEET.SPLIT_DIST or 0
-			owner.splitDist = moveToward(owner.splitDist, wantDist, rampRate * dt)
-
-			if owner.splitDist <= 0.1 then
-				-- Bình thường: toàn hạm đội thành nhiều vòng đồng tâm quanh Tàu Mẹ
-				packRings(list, center, dt)
-			else
-				-- Split: chia hạm đội theo chẵn/lẻ -> 2 cánh, mỗi cánh tự packRings
-				-- quanh tâm cánh của nó (lệch sang trái/phải theo hướng đi).
-				local right = Util.rotateRight90(owner.facing)
-				local leftWing, rightWing = {}, {}
-				for i, u in ipairs(list) do
-					if i % 2 == 1 then
-						table.insert(leftWing, u)
-					else
-						table.insert(rightWing, u)
-					end
+	-- Duyệt theo TỪNG owner, gom unit của owner vào buffer dùng lại (không cấp phát
+	-- bảng groups mỗi frame). Bỏ qua Kamikaze đã kích hoạt (u.armed): CombatSystem tự lái.
+	for ownerId, owner in pairs(GameState.motherships) do
+		if owner.alive and owner.part then
+			table.clear(_ownerList)
+			for _, u in ipairs(GameState.units) do
+				if u.ownerId == ownerId and not u.armed then
+					table.insert(_ownerList, u)
 				end
-				packRings(leftWing, center - right * owner.splitDist, dt)
-				packRings(rightWing, center + right * owner.splitDist, dt)
+			end
+
+			if #_ownerList > 0 then
+				local center = owner.part.Position
+				local wantDist = owner.split and Config.FLEET.SPLIT_DIST or 0
+				owner.splitDist = moveToward(owner.splitDist, wantDist, rampRate * dt)
+
+				if owner.splitDist <= 0.1 then
+					packRings(_ownerList, center, dt)
+				else
+					local right = Util.rotateRight90(owner.facing)
+					table.clear(_wingL); table.clear(_wingR)
+					for i, u in ipairs(_ownerList) do
+						if i % 2 == 1 then table.insert(_wingL, u) else table.insert(_wingR, u) end
+					end
+					packRings(_wingL, center - right * owner.splitDist, dt)
+					packRings(_wingR, center + right * owner.splitDist, dt)
+				end
 			end
 		end
 	end
@@ -433,10 +456,10 @@ local function separationPass()
 		end
 	end
 
-	-- Áp lực đẩy (kẹp để không giật)
+	-- Áp lực đẩy (kẹp để không giật). Tàn quân KHÔNG bị đẩy (đứng im chờ được chiếm).
 	for _, u in ipairs(units) do
 		local part = u.part
-		if part and part.Parent and not u.armed and (u._sx ~= 0 or u._sz ~= 0) then
+		if part and part.Parent and not u.armed and not u.remnant and (u._sx ~= 0 or u._sz ~= 0) then
 			local mag = math.sqrt(u._sx * u._sx + u._sz * u._sz)
 			if mag > maxPush then
 				u._sx = u._sx / mag * maxPush
@@ -444,6 +467,30 @@ local function separationPass()
 			end
 			local p = part.Position
 			part.Position = Vector3.new(p.X + u._sx, p.Y, p.Z + u._sz)
+		end
+	end
+end
+
+-- Tàu Mẹ chạm (trong CAPTURE_RANGE) tàn quân đứng im -> chiếm về đội mình (nếu còn cap).
+function FleetSystem.captureRemnants()
+	local range = Config.FLEET.CAPTURE_RANGE or 18
+	for _, u in ipairs(GameState.units) do
+		if u.remnant and u.part and u.part.Parent then
+			for id, ms in pairs(GameState.motherships) do
+				if ms.alive and ms.part then
+					local d = (ms.part.Position - u.part.Position).Magnitude
+					if d <= range then
+						if FleetSystem.getUsedCap(id) + (u.weight or 1) <= FleetSystem.getMaxCap(id) then
+							u.ownerId = id
+							u.remnant = false
+							u.cooldown = 0
+							u.part.Color = ms.teamColor -- nhuộm màu phe mới
+							FleetSystem.sendFleetUpdate(id)
+						end
+						break -- đã gặp 1 Tàu Mẹ trong tầm -> khỏi xét tiếp
+					end
+				end
+			end
 		end
 	end
 end
@@ -467,6 +514,7 @@ function FleetSystem.init()
 
 	RunService.Heartbeat:Connect(function(dt)
 		cleanupUnits()
+		FleetSystem.captureRemnants() -- Tàu Mẹ chạm tàn quân -> chiếm
 		updateFormation(dt)
 		separationPass() -- đẩy tách sau khi đã về đội hình -> không đè nhau
 	end)

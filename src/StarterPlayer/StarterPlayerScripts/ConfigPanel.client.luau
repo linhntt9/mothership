@@ -44,6 +44,8 @@ add("Range", "MOTHERSHIP.RANGE")
 add("FireRate", "MOTHERSHIP.FIRE_RATE")
 add("AoE", "MOTHERSHIP.AOE")
 add("Build Channel (s)", "MOTHERSHIP.BUILD_CHANNEL")
+add("Regen delay (s)", "MOTHERSHIP.REGEN_DELAY")
+add("Regen rate (hp/s)", "MOTHERSHIP.REGEN_RATE")
 
 add("— CAMERA —", nil)
 add("Height (gần/xa)", "CAMERA.HEIGHT")
@@ -175,8 +177,8 @@ gui.Parent = playerGui
 
 -- Nút mở/đóng
 local toggle = Instance.new("TextButton")
-toggle.Size = UDim2.new(0, 44, 0, 44)
-toggle.Position = UDim2.new(0, 10, 0, 10)
+toggle.Size = UDim2.new(0, 40, 0, 40)
+toggle.Position = UDim2.new(0, 12, 0, 52) -- dưới topbar Roblox, cạnh trái nút Lobby
 toggle.BackgroundColor3 = Color3.fromRGB(40, 46, 60)
 toggle.TextColor3 = Color3.fromRGB(255, 255, 255)
 toggle.Font = Enum.Font.GothamBold
@@ -188,7 +190,7 @@ toggle.Parent = gui
 -- Khung panel
 local panel = Instance.new("Frame")
 panel.Size = UDim2.new(0, 340, 0, 460)
-panel.Position = UDim2.new(0, 10, 0, 62)
+panel.Position = UDim2.new(0, 12, 0, 98)
 panel.BackgroundColor3 = Color3.fromRGB(18, 22, 32)
 panel.BackgroundTransparency = 0.05
 panel.Active = true        -- hút input, không lọt xuống thao tác game

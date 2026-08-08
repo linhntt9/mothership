@@ -34,14 +34,20 @@ Config.BOT_COUNT = 2
 -- Tiền tố danh hiệu gắn trước tên mọi người chơi (nameplate, leaderboard, bảng thua).
 Config.PLAYER_PREFIX = "[Captain] "
 
--- Bot AI (M5)
+-- Bot AI — chơi như người: xây căn cứ (mine + hub + tháp), gom scrap, mua quân,
+-- bành trướng & raid kinh tế địch.
 Config.BOT = {
-	DECISION_INTERVAL = 1.5, -- giây giữa 2 lần "suy nghĩ"
-	TARGET_MINES = 3,        -- số mine bot cố gắng xây
-	AGGRESS_RATIO = 1.3,     -- fleetValue >= ratio * địch -> tấn công
-	RETREAT_HP = 0.30,       -- HP < 30% -> lùi
-	RETREAT_WEAK = 0.6,      -- fleetValue < 0.6 * địch -> lùi
-	BUY_PER_TICK = 4,        -- số quân tối đa mua mỗi lần quyết định
+	DECISION_INTERVAL = 1.2, -- giây giữa 2 lần "suy nghĩ" (nhanh hơn = phản ứng lẹ)
+	TARGET_MINES = 5,        -- số mine bot cố chiếm (bành trướng kinh tế)
+	TARGET_HUBS = 4,         -- số nhà (Hub) để nâng cap dần như người chơi
+	TARGET_TOWERS = 3,       -- số tháp thủ (LaserSat) quanh căn cứ để phòng thủ
+	AGGRESS_RATIO = 1.4,     -- fleetValue >= ratio * địch MỚI tấn công (cao = ít hiếu chiến)
+	MIN_ARMY_VALUE = 1200,   -- phải gây dựng đủ lực (tổng cost quân) mới được đi đánh
+	RETREAT_HP = 0.35,       -- HP < 35% -> lùi về nhà (rồi hồi máu + xây lại)
+	RETREAT_WEAK = 0.6,      -- fleetValue < ratio * địch -> lùi
+	BUY_PER_TICK = 5,        -- số quân tối đa mua mỗi lần quyết định
+	RAID_CHANCE = 0.4,       -- khi AGGRESS: xác suất nhắm CÔNG TRÌNH địch (phá kinh tế)
+	SCRAP_RESERVE = 60,      -- giữ tối thiểu scrap để luôn mua được quân rẻ
 }
 
 -------------------------------------------------------------------------------
@@ -57,10 +63,12 @@ Config.LOBBY = {
 	SHIP_SCALE = 1.9,                -- Tàu Mẹ ở lobby to hơn cho dễ nhìn/khoe skin
 	MOVE_MULT = 1.7,                 -- lobby lái nhanh/mượt hơn (nhân vào tốc độ nền)
 	-- Vị trí 3 cổng trong sảnh. id dùng cho client mở đúng panel.
+	-- Zone "class" (TÀU MẸ) giờ CHÍNH LÀ rương gacha: vào đó mở hòm roll Tàu Mẹ.
+	-- (Đã bỏ zone "chest" riêng — chức năng gộp vào đây.)
+	-- Tàu Mẹ sang PHẢI, Skin sang TRÁI -> lối giữa (x=0) tới VÀO TRẬN thông thoáng.
 	ZONES = {
-		{ id = "class", label = "TÀU MẸ", x = -95, z = -15,  color = Color3.fromRGB(120, 170, 255) },
-		{ id = "skin",  label = "SKIN SHOP",  x = 95,  z = -15,  color = Color3.fromRGB(210, 130, 255) },
-		{ id = "chest", label = "RƯƠNG CLASS", x = 0,  z = 48,   color = Color3.fromRGB(255, 205, 70) },
+		{ id = "class", label = "TÀU MẸ",     x = 95,  z = -15,  color = Color3.fromRGB(255, 205, 70) },
+		{ id = "skin",  label = "SKIN SHOP",  x = -95, z = -15,  color = Color3.fromRGB(210, 130, 255) },
 		{ id = "gate",  label = "VÀO TRẬN",   x = 0,   z = -110, color = Color3.fromRGB(90, 220, 120) },
 	},
 	-- RƯƠNG CLASS ở sảnh: mở ra 1 Tàu Mẹ (roll theo weight/độ hiếm trong HEROES),
@@ -100,6 +108,10 @@ Config.MOTHERSHIP = {
 	RANGE = 48,
 	FIRE_RATE = 1.5,     -- shot/s
 	AOE = 10,            -- bán kính sát thương lan quanh mục tiêu
+
+	-- Tự hồi máu khi RA KHỎI giao tranh (không trúng đòn trong REGEN_DELAY giây).
+	REGEN_DELAY = 6,     -- giây kể từ phát trúng cuối mới bắt đầu hồi
+	REGEN_RATE = 40,     -- HP hồi mỗi giây (0 = tắt hồi máu)
 }
 
 -------------------------------------------------------------------------------
@@ -115,7 +127,7 @@ Config.FLEET = {
 	-- Đội hình NHIỀU VÒNG ĐỒNG TÂM nở dần ra ngoài (nhìn đồ sộ như Lordz).
 	-- Xếp tank ở trong, drone ở ngoài; mỗi vòng chứa nhiều unit theo chu vi,
 	-- đầy thì nở ra vòng kế tiếp.
-	INNER_RADIUS = 12,     -- bán kính vòng trong cùng (studs)
+	INNER_RADIUS = 20,     -- bán kính vòng trong cùng (studs) — chừa chỗ cho thân+deco Tàu Mẹ
 	RING_GAP = 8,          -- khoảng cách giữa 2 vòng đồng tâm (giãn -> trải rộng)
 	UNIT_SPACING = 6,      -- khoảng cách cung giữa 2 unit trong 1 vòng
 	RING_MIN_SLOTS = 6,    -- số slot tối thiểu mỗi vòng
@@ -124,6 +136,7 @@ Config.FLEET = {
 	-- Chống chồng nhau (separation): unit đè lên nhau bị đẩy ra khi chạm trán.
 	SEPARATION_STRENGTH = 0.4, -- phần overlap giải quyết mỗi frame (0 = tắt)
 	SEPARATION_MAX = 4,        -- đẩy tối đa mỗi frame (studs) để không giật
+	CAPTURE_RANGE = 18,        -- Tàu Mẹ tới trong tầm này thì CHIẾM được tàn quân (studs)
 	SPLIT_DIST = 25,       -- khoảng tách tối đa của 2 cánh khi Split
 	SPLIT_RAMP = 0.4,      -- giây để tách/gộp mượt (ramp 0<->SPLIT_DIST)
 	-- Vị trí vòng đội hình xếp theo RING của từng unit: CORE (trong) -> GUARD (giữa)
@@ -261,6 +274,9 @@ Config.TEAM = {
 Config.ECONOMY = {
 	START_SCRAP = 500,
 	INCOME_TICK = 1.0, -- giây
+	MOTHERSHIP_KILL_REWARD = 1000, -- thưởng scrap khi hạ 1 Tàu Mẹ địch
+	MOTHERSHIP_KILL_GEM = 1,       -- thưởng gem khi hạ 1 Tàu Mẹ địch
+	BUILDING_KILL_REWARD = 100,    -- thưởng scrap khi phá 1 công trình địch
 	BUILD_SIZE_MULT = 1, -- hệ số nhân KÍCH CỠ nhà (kích cỡ nền đã ~2.5× Tàu Mẹ; tăng để to hơn)
 	-- HP nhà tính theo công thức: hp(tier) = hpBase * HP_TIER_MULT^(tier-1).
 	-- Config chỉ cần điền hpBase mỗi loại; nâng tier tự cộng máu theo hệ số này.

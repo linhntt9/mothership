@@ -107,6 +107,26 @@ local function ownMineCount(ownerId)
 	return c
 end
 
+local function ownBuildingCount(ownerId, btype)
+	local c = 0
+	for _, b in ipairs(GameState.buildings) do
+		if b.ownerId == ownerId and b.buildingType == btype then c += 1 end
+	end
+	return c
+end
+
+-- Công trình của mình vừa bị đánh (trong 3s) -> trả về để về phòng thủ.
+local function threatenedBuilding(ownerId)
+	local now = os.clock()
+	for _, b in ipairs(GameState.buildings) do
+		if b.ownerId == ownerId and b.part and b.part.Parent
+			and b.lastDamageTime and (now - b.lastDamageTime) < 3 then
+			return b
+		end
+	end
+	return nil
+end
+
 local function nearestPickup(pos)
 	local best, bd
 	for _, p in ipairs(GameState.pickups) do
@@ -167,12 +187,24 @@ local function decide(ownerId)
 		return
 	end
 
-	-- Kinh tế: luôn cố mua quân + xây hub khi cap gần đầy
+	-- Mua quân lấp cap
 	botBuy(ownerId)
+
+	-- XÂY CĂN CỨ (mỗi lần quyết định thử 1 công trình; vị trí xoay quanh nhà cho trải đều):
+	--   ưu tiên Hub (nâng cap) khi cap gần đầy -> rồi Tháp thủ khi kinh tế đã vững.
+	local scrap = EconomySystem.getScrap(ownerId)
 	local used = FleetSystem.getUsedCap(ownerId)
 	local maxc = FleetSystem.getMaxCap(ownerId)
-	if used >= maxc - 1 and EconomySystem.getScrap(ownerId) >= Config.ECONOMY.DRONE_HUB[1].cost then
-		BuildingSystem.botPlace(ownerId, "DroneHub", st.home + Vector3.new(18, 0, 0))
+	st.buildAngle = (st.buildAngle or 0) + 1.3
+	local function nearHome(radius)
+		return st.home + Vector3.new(math.cos(st.buildAngle) * radius, 0, math.sin(st.buildAngle) * radius)
+	end
+	if used >= maxc - 2 and ownBuildingCount(ownerId, "DroneHub") < Config.BOT.TARGET_HUBS
+		and scrap >= Config.ECONOMY.DRONE_HUB[1].cost then
+		BuildingSystem.botPlace(ownerId, "DroneHub", nearHome(36))
+	elseif ownMineCount(ownerId) >= 2 and ownBuildingCount(ownerId, "LaserSat") < Config.BOT.TARGET_TOWERS
+		and scrap >= Config.ECONOMY.LASER_SAT[1].cost + Config.BOT.SCRAP_RESERVE then
+		BuildingSystem.botPlace(ownerId, "LaserSat", nearHome(46))
 	end
 
 	-- Chọn trạng thái
@@ -181,12 +213,17 @@ local function decide(ownerId)
 	local enemy = nearestEnemyMothership(ownerId, pos)
 	local enemyVal = enemy and (fleetValue(enemy.ownerId) + 1) or 0
 
+	-- Ưu tiên: sống sót -> bành trướng kinh tế -> chỉ đánh khi ĐỦ LỰC & vượt trội rõ.
+	-- Mặc định ECONOMY (gom scrap + xây) -> bot gây dựng trước, không lao vào đấm sớm.
+	local threat = threatenedBuilding(ownerId)
 	local state
 	if hpFrac < Config.BOT.RETREAT_HP or (enemy and myVal < enemyVal * Config.BOT.RETREAT_WEAK) then
 		state = "RETREAT"
+	elseif threat then
+		state = "DEFEND" -- công trình đang bị đánh -> về cứu
 	elseif ownMineCount(ownerId) < Config.BOT.TARGET_MINES and nearestEmptyDeposit(pos) then
 		state = "EXPAND"
-	elseif enemy and myVal >= enemyVal * Config.BOT.AGGRESS_RATIO then
+	elseif enemy and myVal >= Config.BOT.MIN_ARMY_VALUE and myVal >= enemyVal * Config.BOT.AGGRESS_RATIO then
 		state = "AGGRESS"
 	else
 		state = "ECONOMY"
@@ -198,13 +235,24 @@ local function decide(ownerId)
 	if state == "EXPAND" then
 		local dep = nearestEmptyDeposit(pos)
 		if dep then
-			entry.targetPoint = dep.Position
-			if Util.flatDist(pos, dep.Position) <= Config.ECONOMY.BUILD_RANGE then
-				BuildingSystem.botPlace(ownerId, "ScrapMine", dep.Position)
+			if EconomySystem.getScrap(ownerId) >= Config.ECONOMY.SCRAP_MINE[1].cost then
+				-- Đủ tiền: tới mỏ và cắm mine.
+				entry.targetPoint = dep.Position
+				if Util.flatDist(pos, dep.Position) <= Config.ECONOMY.BUILD_RANGE then
+					BuildingSystem.botPlace(ownerId, "ScrapMine", dep.Position)
+				end
+			else
+				-- Chưa đủ tiền -> ĐI GOM SCRAP (không đứng ì) tới khi mua nổi mine.
+				local orb = nearestPickup(pos)
+				entry.targetPoint = orb and orb.part.Position or dep.Position
 			end
 		end
+	elseif state == "DEFEND" and threat then
+		entry.targetPoint = threat.part.Position -- về chỗ công trình bị đánh để đánh trả
 	elseif state == "AGGRESS" and enemy then
-		entry.targetPoint = enemy.part.Position
+		-- Đôi khi RAID công trình địch (phá kinh tế / chiếm đóng) thay vì đấm thẳng Tàu Mẹ.
+		local raidB = (math.random() < Config.BOT.RAID_CHANCE) and nearestEnemyBuilding(ownerId, pos) or nil
+		entry.targetPoint = raidB and raidB.part.Position or enemy.part.Position
 	elseif state == "RETREAT" then
 		entry.targetPoint = st.home
 	else -- ECONOMY: gom scrap rải

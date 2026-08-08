@@ -21,6 +21,7 @@ local Util = require(ReplicatedStorage.Util)
 local Remotes = require(ReplicatedStorage.Remotes)
 local GameState = require(script.Parent.GameState)
 local MatchState = require(script.Parent.MatchState)
+local MapSystem = require(script.Parent.MapSystem)
 
 local MothershipSystem = {}
 
@@ -28,9 +29,31 @@ local folder -- Folder chứa mọi mothership part trong workspace
 
 -- Vị trí spawn của player: góc dưới-trái, cách tâm SPAWN_FRAC * nửa-map.
 -- Tính LIVE (mỗi lần spawn) từ Config.MAP -> đổi MAP.SIZE rồi Chơi lại là tự dãn.
+-- Có Tàu Mẹ nào đang trong bán kính minD quanh pos không?
+local function tooCloseToShip(pos, minD)
+	for _, e in pairs(GameState.motherships) do
+		if e.part and (e.part.Position - pos).Magnitude < minD then
+			return true
+		end
+	end
+	return false
+end
+
+-- Vị trí spawn NGẪU NHIÊN trên map khi vào trận: né mỏ + không quá gần Tàu Mẹ khác.
+-- Thử tối đa 25 lần rồi fallback về 1 điểm ngẫu nhiên bất kỳ.
 function MothershipSystem.playerSpawnPos()
-	local s = (Config.MAP.SIZE / 2) * (Config.MAP.SPAWN_FRAC or 0.8)
-	return Vector3.new(-s, Config.MOTHERSHIP.RADIUS, -s)
+	local half = Config.MAP.SIZE / 2
+	local margin = 60
+	local r = Config.MOTHERSHIP.RADIUS
+	for _ = 1, 25 do
+		local x = math.random(-half + margin, half - margin)
+		local z = math.random(-half + margin, half - margin)
+		local pos = MapSystem.resolveDeposits(Vector3.new(x, r, z), r * 2) -- đẩy ra khỏi mỏ
+		if not tooCloseToShip(pos, 90) then
+			return pos
+		end
+	end
+	return Vector3.new(math.random(-half + margin, half - margin), r, math.random(-half + margin, half - margin))
 end
 
 -- Gắn thanh máu (BillboardGui) lên 1 part. Server tạo -> replicate xuống client.
@@ -114,11 +137,105 @@ local function applyHeroSkin(part, skin, inLobby, teamColor)
 	part.Color = (inLobby and skin and skin.color) or teamColor
 end
 
+local function lighten(c, a)
+	return c:Lerp(Color3.new(1, 1, 1), a)
+end
+
+-- Dựng TRANG TRÍ 3D theo class/rarity, hàn (weld) vào thân để di chuyển cùng.
+-- Silhouette khác nhau -> nhìn phát biết class (kể cả trong trận khi màu = phe):
+--   Vanguard: gai/dart tỏa ra (bầy hung hãn) · Guard: vành giáp dày + khối giáp
+--   (tank) · Artillery: tháp pháo giữa + nòng tỏa ra. Rarity: số đèn viền + vương miện.
+local function buildHeroDeco(part, skin, inLobby, teamColor)
+	local old = part:FindFirstChild("Deco")
+	if old then old:Destroy() end
+	if not skin then return end
+
+	local deco = Instance.new("Folder")
+	deco.Name = "Deco"
+	deco.Parent = part
+
+	local rXZ = part.Size.X / 2
+	local topY = part.Size.Y / 2
+	local baseColor = (inLobby and skin.color) or teamColor
+	local accent = lighten(baseColor, 0.45)
+	local lightColor = lighten(baseColor, 0.55)
+	local mat = skin.material or Enum.Material.Neon
+
+	local list = {} -- { {part, offset(CFrame cục bộ)} } để cập nhật bám tàu mỗi frame
+	local function add(size, offset, yaw, color, material, class, shape)
+		local d = Instance.new(class or "Part")
+		d.Size = size
+		d.Color = color
+		d.Material = material or Enum.Material.SmoothPlastic
+		-- Anchored: KHÔNG dùng weld (weld không bám khi thân anchored dời bằng .Position).
+		-- Vị trí sẽ được stepMothership set lại theo thân mỗi frame.
+		d.Anchored = true
+		d.CanCollide = false; d.CanQuery = false; d.CastShadow = false
+		if shape and d:IsA("Part") then d.Shape = shape end
+		local cf = part.CFrame * CFrame.new(offset) * (yaw or CFrame.new())
+		d.CFrame = cf
+		d.Parent = deco
+		table.insert(list, { part = d, offset = part.CFrame:ToObjectSpace(cf) })
+	end
+
+	-- Vòm buồng lái (mọi con)
+	add(Vector3.new(rXZ * 0.95, topY * 1.7, rXZ * 0.95), Vector3.new(0, topY * 0.2, 0), nil,
+		accent, Enum.Material.SmoothPlastic, "Part", Enum.PartType.Ball)
+
+	-- Đèn viền quanh rìa (UFO) — số lượng theo rarity
+	local lights = (skin.rarity == "Epic" and 12) or (skin.rarity == "Rare" and 9) or 6
+	for i = 1, lights do
+		local a = (i / lights) * math.pi * 2
+		add(Vector3.new(rXZ * 0.16, rXZ * 0.16, rXZ * 0.16),
+			Vector3.new(math.cos(a) * rXZ * 0.82, topY * 0.15, math.sin(a) * rXZ * 0.82),
+			nil, lightColor, Enum.Material.Neon, "Part", Enum.PartType.Ball)
+	end
+
+	if skin.cat == "Vanguard" then
+		for i = 1, 6 do
+			local a = (i / 6) * math.pi * 2
+			add(Vector3.new(rXZ * 0.32, topY * 0.5, rXZ * 1.05),
+				Vector3.new(math.cos(a) * rXZ * 1.0, topY * 0.05, math.sin(a) * rXZ * 1.0),
+				CFrame.Angles(0, -a, 0), accent, mat, "WedgePart")
+		end
+	elseif skin.cat == "Guard" then
+		-- vành giáp dày (ellipsoid dẹt rộng) + 4 khối giáp
+		add(Vector3.new(rXZ * 2.45, topY * 0.55, rXZ * 2.45), Vector3.new(0, 0, 0), nil,
+			baseColor, Enum.Material.Metal, "Part", Enum.PartType.Ball)
+		for i = 1, 4 do
+			local a = (i / 4) * math.pi * 2
+			add(Vector3.new(rXZ * 0.5, topY * 1.0, rXZ * 0.85),
+				Vector3.new(math.cos(a) * rXZ * 1.0, topY * 0.25, math.sin(a) * rXZ * 1.0),
+				CFrame.Angles(0, -a, 0), accent, Enum.Material.Metal)
+		end
+	else -- Artillery
+		add(Vector3.new(rXZ * 0.65, topY * 1.5, rXZ * 0.65), Vector3.new(0, topY * 0.6, 0), nil,
+			accent, Enum.Material.Metal)
+		for i = 1, 4 do
+			local a = (i / 4) * math.pi * 2
+			add(Vector3.new(topY * 0.38, topY * 0.38, rXZ * 1.5),
+				Vector3.new(math.cos(a) * rXZ * 0.65, topY * 0.4, math.sin(a) * rXZ * 0.65),
+				CFrame.Angles(0, -a, 0), baseColor, Enum.Material.Metal)
+		end
+	end
+
+	-- Vương miện Epic: chóp neon trên đỉnh
+	if skin.rarity == "Epic" then
+		add(Vector3.new(rXZ * 0.34, topY * 1.7, rXZ * 0.34), Vector3.new(0, topY * 1.5, 0), nil,
+			lightColor, Enum.Material.Neon, "Part", Enum.PartType.Ball)
+	end
+
+	return list
+end
+
 -- Áp lại skin cho Tàu Mẹ đang tồn tại (khi đổi con ở sảnh — không cần respawn).
 function MothershipSystem.reskin(ownerId)
 	local entry = GameState.motherships[ownerId]
 	if not entry or not entry.part then return end
-	applyHeroSkin(entry.part, MothershipSystem.getHeroSkin(ownerId), not MatchState.isPlaying(), entry.teamColor)
+	local inLobby = not MatchState.isPlaying()
+	local skin = MothershipSystem.getHeroSkin(ownerId)
+	applyHeroSkin(entry.part, skin, inLobby, entry.teamColor)
+	entry.deco = buildHeroDeco(entry.part, skin, inLobby, entry.teamColor)
 end
 
 -- Tạo 1 mothership (player hoặc bot). PUBLIC để CombatSystem/BotSystem dùng chung.
@@ -142,10 +259,12 @@ function MothershipSystem.spawn(ownerId, isBot, spawnPos, teamColor)
 	part.Size = Vector3.new(r * 2.8, r * 1.2, r * 2.8) * scale
 	part.Position = spawnPos
 	-- Tạo hình theo Tàu Mẹ đang lái (màu/vật liệu). Trận: giữ màu phe.
-	applyHeroSkin(part, MothershipSystem.getHeroSkin(ownerId), inLobby, teamColor)
+	local skin = MothershipSystem.getHeroSkin(ownerId)
+	applyHeroSkin(part, skin, inLobby, teamColor)
 	part.CastShadow = not inLobby -- lobby: tắt bóng đổ
 	part:SetAttribute("OwnerUserId", ownerId)
 	part.Parent = folder
+	local decoList = buildHeroDeco(part, skin, inLobby, teamColor) -- trang trí 3D theo class/rarity
 
 	-- Thanh máu: chỉ trong trận (lobby không cần).
 	local fill = (not inLobby) and attachHealthBar(part) or nil
@@ -168,6 +287,7 @@ function MothershipSystem.spawn(ownerId, isBot, spawnPos, teamColor)
 		isBot = isBot,
 		teamColor = teamColor,       -- unit sẽ lấy màu này để phân biệt phe
 		part = part,
+		deco = decoList,             -- part trang trí 3D (bám thân mỗi frame)
 		healthFill = fill,
 		targetPoint = spawnPos,      -- ban đầu đứng yên tại chỗ spawn
 		facing = Vector3.new(1, 0, 0),
@@ -189,6 +309,7 @@ function MothershipSystem.spawn(ownerId, isBot, spawnPos, teamColor)
 		cooldown = 0,
 		-- Economy (M4)
 		scrap = Config.ECONOMY.START_SCRAP,
+		gems = 0, -- thưởng khi hạ Tàu Mẹ địch
 		channel = nil, -- {buildingType, tier, point, node, timeLeft, total} khi đang xây
 	}
 	GameState.motherships[ownerId] = entry
@@ -206,9 +327,9 @@ end
 
 -- Spawn lại mothership cho tất cả người chơi đang online (dùng khi Restart).
 function MothershipSystem.respawnPlayers()
-	local spawnPos = MothershipSystem.playerSpawnPos()
 	for _, player in ipairs(Players:GetPlayers()) do
-		MothershipSystem.spawn(player.UserId, false, spawnPos, Config.TEAM.PLAYER)
+		-- Mỗi người 1 vị trí ngẫu nhiên riêng (gọi trong vòng lặp -> khác nhau).
+		MothershipSystem.spawn(player.UserId, false, MothershipSystem.playerSpawnPos(), Config.TEAM.PLAYER)
 	end
 end
 
@@ -268,6 +389,8 @@ local function stepMothership(entry, dt)
 	local bound = MatchState.isPlaying() and Config.MAP.SIZE or Config.LOBBY.SIZE
 	local newPos = pos + dir * step
 	newPos = Util.clampToMap(newPos, bound)
+	-- Không xuyên mỏ / công trình / Tàu Mẹ khác (bỏ qua chính mình; KHÔNG bị unit ghì).
+	newPos = MapSystem.resolveSolids(newPos, Config.MOTHERSHIP.RADIUS * 1.4, entry.part)
 
 	entry.part.Position = newPos
 	entry.facing = dir -- cập nhật hướng đang đi (dùng cho Split sau này)
@@ -295,6 +418,24 @@ function MothershipSystem.init()
 	RunService.Heartbeat:Connect(function(dt)
 		for _, entry in pairs(GameState.motherships) do
 			stepMothership(entry, dt)
+
+			-- Tự hồi máu khi RA KHỎI giao tranh (không trúng đòn trong REGEN_DELAY giây).
+			if entry.alive and Config.MOTHERSHIP.REGEN_RATE > 0 and entry.hp < entry.maxHp then
+				if (os.clock() - (entry.lastDamageTime or 0)) >= Config.MOTHERSHIP.REGEN_DELAY then
+					entry.hp = math.min(entry.maxHp, entry.hp + Config.MOTHERSHIP.REGEN_RATE * dt)
+					MothershipSystem.updateHealthBar(entry)
+				end
+			end
+
+			-- Deco 3D bám theo thân mỗi frame (anchored -> phải tự set CFrame).
+			if entry.deco and entry.part then
+				local bcf = entry.part.CFrame
+				for _, d in ipairs(entry.deco) do
+					if d.part and d.part.Parent then
+						d.part.CFrame = bcf * d.offset
+					end
+				end
+			end
 		end
 	end)
 

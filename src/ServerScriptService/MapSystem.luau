@@ -126,9 +126,77 @@ function MapSystem.clearAll()
 	if base then base:Destroy() end
 end
 
+-- Đẩy 1 vị trí ra ngoài mọi mỏ (để Tàu Mẹ/unit không đi xuyên mỏ).
+-- pos: vị trí muốn tới; radius: bán kính va chạm của thực thể. Trả về vị trí đã
+-- kẹp ra ngoài rìa mỏ (giữ nguyên Y). Mỏ thưa (~130 studs) nên chỉ chạm 1 mỏ/lần.
+function MapSystem.resolveDeposits(pos, radius)
+	local minBase = Config.MAP.ORE_DEPOSIT_RADIUS + (radius or 0)
+	for node in pairs(GameState.oreDeposits) do
+		if node.Parent then
+			local dx = pos.X - node.Position.X
+			local dz = pos.Z - node.Position.Z
+			local dist = math.sqrt(dx * dx + dz * dz)
+			if dist < minBase then
+				if dist > 1e-4 then
+					local push = minBase - dist
+					pos = Vector3.new(pos.X + dx / dist * push, pos.Y, pos.Z + dz / dist * push)
+				else
+					pos = Vector3.new(pos.X + minBase, pos.Y, pos.Z) -- trùng tâm -> đẩy lệch
+				end
+			end
+		end
+	end
+	return pos
+end
+
+-- Đẩy `pos` ra ngoài 1 vòng tròn (tâm cx,cz, bán kính tối thiểu minD) trên mặt XZ.
+local function pushOut(pos, cx, cz, minD)
+	local dx, dz = pos.X - cx, pos.Z - cz
+	local dist = math.sqrt(dx * dx + dz * dz)
+	if dist < minD then
+		if dist > 1e-4 then
+			local p = minD - dist
+			return Vector3.new(pos.X + dx / dist * p, pos.Y, pos.Z + dz / dist * p)
+		else
+			return Vector3.new(pos.X + minD, pos.Y, pos.Z)
+		end
+	end
+	return pos
+end
+
+-- Đẩy `pos` ra ngoài mọi VẬT CẢN CỨNG: mỏ + công trình + Tàu Mẹ (trừ selfPart).
+--   includeUnits=false: KHÔNG né unit (dùng cho Tàu Mẹ — vật to không bị unit ghì).
+-- radius = bán kính va chạm của thực thể đang di chuyển.
+function MapSystem.resolveSolids(pos, radius, selfPart)
+	radius = radius or 0
+	-- Mỏ
+	local dmin = Config.MAP.ORE_DEPOSIT_RADIUS + radius
+	for node in pairs(GameState.oreDeposits) do
+		if node.Parent then
+			pos = pushOut(pos, node.Position.X, node.Position.Z, dmin)
+		end
+	end
+	-- Công trình
+	for _, b in ipairs(GameState.buildings) do
+		local part = b.part
+		if part and part.Parent and part ~= selfPart then
+			pos = pushOut(pos, part.Position.X, part.Position.Z, math.max(part.Size.X, part.Size.Z) / 2 + radius)
+		end
+	end
+	-- Tàu Mẹ khác
+	for _, m in pairs(GameState.motherships) do
+		local part = m.part
+		if m.alive and part and part.Parent and part ~= selfPart then
+			pos = pushOut(pos, part.Position.X, part.Position.Z, math.max(part.Size.X, part.Size.Z) / 2 + radius)
+		end
+	end
+	return pos
+end
+
 function MapSystem.init()
 	clearDefaultTerrain()
-	makeBaseplate()
+	-- KHÔNG dựng baseplate: arena là "không gian" (nền trời). Con trỏ vẫn tính
+	-- world-point bằng cắt mặt phẳng Y=0 (không cần part sàn).
 
 	local container = Instance.new("Folder")
 	container.Name = "OreDeposits"

@@ -208,7 +208,7 @@ Remotes.OpenChest.OnServerEvent:Connect(function(player)
 	end
 	local now = tick()
 	local last = chestLastOpen[uid]
-	local cd = Config.CHEST.COOLDOWN
+	local cd = Config.LOBBY.CHEST.COOLDOWN
 	if last and (now - last) < cd then
 		Remotes.OpenChest:FireClient(player, false, nil, math.ceil(cd - (now - last)))
 		return

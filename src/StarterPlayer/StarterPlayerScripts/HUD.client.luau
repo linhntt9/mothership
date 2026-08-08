@@ -43,8 +43,8 @@ local function makeCounter(name, posY, color)
 	local lbl = Instance.new("TextLabel")
 	lbl.Name = name
 	lbl.AnchorPoint = Vector2.new(1, 1)
-	lbl.Position = UDim2.new(1, -16, 1, posY)
-	lbl.Size = UDim2.new(0, 200, 0, 38)
+	lbl.Position = UDim2.new(1, -14, 1, posY)
+	lbl.Size = UDim2.new(0, 168, 0, 30)
 	lbl.BackgroundColor3 = Color3.fromRGB(15, 18, 28)
 	lbl.BackgroundTransparency = 0.25
 	lbl.TextColor3 = color
@@ -58,8 +58,14 @@ local function makeCounter(name, posY, color)
 	return lbl
 end
 
-local scrapLabel = makeCounter("Scrap", -60, Color3.fromRGB(255, 220, 120))
-local fleetLabel = makeCounter("Fleet", -16, Color3.fromRGB(180, 220, 255))
+-- Xếp phía TRÊN minimap (minimap 132 + đáy 12 ~ chiếm 144px dưới-phải).
+local scrapLabel = makeCounter("Scrap", -190, Color3.fromRGB(255, 220, 120))
+local fleetLabel = makeCounter("Fleet", -156, Color3.fromRGB(180, 220, 255))
+local gemLabel = makeCounter("Gem", -224, Color3.fromRGB(200, 150, 255))
+gemLabel.Text = "Gem: 0 ✦"
+Remotes.GemUpdate.OnClientEvent:Connect(function(g)
+	gemLabel.Text = ("Gem: %d ✦"):format(g)
+end)
 
 -------------------------------------------------------------------------------
 -- Hotbar (dưới, giữa)
@@ -67,13 +73,13 @@ local fleetLabel = makeCounter("Fleet", -16, Color3.fromRGB(180, 220, 255))
 local bar = Instance.new("Frame")
 bar.Name = "Hotbar"
 bar.AnchorPoint = Vector2.new(0.5, 1)
-bar.Position = UDim2.new(0.5, 0, 1, -12)
-bar.Size = UDim2.new(0, 13 * 100, 0, 66)
+bar.Position = UDim2.new(0.5, 0, 1, -10)
+bar.Size = UDim2.new(0, 13 * 61, 0, 52)
 bar.BackgroundTransparency = 1
 bar.Parent = gui
 local layout = Instance.new("UIListLayout")
 layout.FillDirection = Enum.FillDirection.Horizontal
-layout.Padding = UDim.new(0, 8)
+layout.Padding = UDim.new(0, 4)
 layout.HorizontalAlignment = Enum.HorizontalAlignment.Center
 layout.SortOrder = Enum.SortOrder.LayoutOrder
 layout.Parent = bar
@@ -157,12 +163,12 @@ for i, def in ipairs(defs) do
 	local btn = Instance.new("TextButton")
 	btn.Name = def.key
 	btn.LayoutOrder = i
-	btn.Size = UDim2.new(0, 92, 1, 0)
+	btn.Size = UDim2.new(0, 57, 1, 0)
 	btn.BackgroundColor3 = (def.kind == "build") and Color3.fromRGB(70, 90, 120) or Color3.fromRGB(50, 70, 60)
 	btn.AutoButtonColor = true
 	btn.Font = Enum.Font.GothamBold
 	btn.TextColor3 = Color3.fromRGB(240, 240, 240)
-	btn.TextSize = 13
+	btn.TextSize = 11
 	btn.Text = ("%s\n%d ◈\n[%s]"):format(def.label, def.cost, def.hotkey)
 	local c = Instance.new("UICorner"); c.CornerRadius = UDim.new(0, 8); c.Parent = btn
 	btn.Parent = bar
@@ -184,9 +190,9 @@ end
 -- ===== Nút cảm ứng (mobile): Split (giữ) + Huỷ xây =====
 if UserInputService.TouchEnabled then
 	local splitBtn = Instance.new("TextButton")
-	splitBtn.AnchorPoint = Vector2.new(1, 1)
-	splitBtn.Position = UDim2.new(1, -16, 1, -120)
-	splitBtn.Size = UDim2.new(0, 130, 0, 60)
+	splitBtn.AnchorPoint = Vector2.new(0, 1)
+	splitBtn.Position = UDim2.new(0, 16, 1, -16)
+	splitBtn.Size = UDim2.new(0, 120, 0, 56)
 	splitBtn.BackgroundColor3 = Color3.fromRGB(120, 90, 210)
 	splitBtn.Font = Enum.Font.GothamBold; splitBtn.TextSize = 20
 	splitBtn.TextColor3 = Color3.fromRGB(255, 255, 255); splitBtn.Text = "⮂ Split"
@@ -196,9 +202,9 @@ if UserInputService.TouchEnabled then
 	splitBtn.MouseButton1Up:Connect(function() Remotes.SplitInput:FireServer(false) end)
 
 	local cancelBtn = Instance.new("TextButton")
-	cancelBtn.AnchorPoint = Vector2.new(1, 1)
-	cancelBtn.Position = UDim2.new(1, -16, 1, -188)
-	cancelBtn.Size = UDim2.new(0, 130, 0, 52)
+	cancelBtn.AnchorPoint = Vector2.new(0, 1)
+	cancelBtn.Position = UDim2.new(0, 16, 1, -82)
+	cancelBtn.Size = UDim2.new(0, 120, 0, 48)
 	cancelBtn.BackgroundColor3 = Color3.fromRGB(150, 70, 70)
 	cancelBtn.Font = Enum.Font.GothamBold; cancelBtn.TextSize = 18
 	cancelBtn.TextColor3 = Color3.fromRGB(255, 255, 255); cancelBtn.Text = "✕ Huỷ xây"
@@ -290,14 +296,14 @@ end)
 -- Hint phím
 -------------------------------------------------------------------------------
 local hint = Instance.new("TextLabel")
-hint.AnchorPoint = Vector2.new(0, 1)
-hint.Position = UDim2.new(0, 16, 1, -16)
-hint.Size = UDim2.new(0, 560, 0, 24)
+hint.AnchorPoint = Vector2.new(0.5, 1)
+hint.Position = UDim2.new(0.5, 0, 1, -66)
+hint.Size = UDim2.new(0, 720, 0, 16)
 hint.BackgroundTransparency = 1
-hint.TextColor3 = Color3.fromRGB(200, 200, 210)
-hint.TextXAlignment = Enum.TextXAlignment.Left
+hint.TextColor3 = Color3.fromRGB(180, 185, 200)
+hint.TextXAlignment = Enum.TextXAlignment.Center
 hint.Font = Enum.Font.Gotham
-hint.TextSize = 14
+hint.TextSize = 12
 hint.Text = "1-4: mua quân | Q: Mine (trên mỏ) | R: Hub | click map để đặt | click building: nâng cấp | chuột phải: huỷ | SPACE: Split"
 hint.Parent = gui
 
@@ -306,8 +312,8 @@ hint.Parent = gui
 -------------------------------------------------------------------------------
 local backBtn = Instance.new("TextButton")
 backBtn.Name = "BackToLobby"
-backBtn.Position = UDim2.new(0, 62, 0, 10)
-backBtn.Size = UDim2.new(0, 118, 0, 36)
+backBtn.Position = UDim2.new(0, 58, 0, 52)
+backBtn.Size = UDim2.new(0, 104, 0, 34)
 backBtn.BackgroundColor3 = Color3.fromRGB(70, 120, 220)
 backBtn.Font = Enum.Font.GothamBold
 backBtn.TextColor3 = Color3.fromRGB(255, 255, 255)

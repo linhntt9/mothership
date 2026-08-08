@@ -27,6 +27,7 @@ local GameState = require(script.Parent.GameState)
 local MothershipSystem = require(script.Parent.MothershipSystem)
 local FleetSystem = require(script.Parent.FleetSystem)
 local BuildingSystem = require(script.Parent.BuildingSystem)
+local EconomySystem = require(script.Parent.EconomySystem)
 
 local CombatSystem = {}
 
@@ -76,13 +77,18 @@ local function killMothership(ent)
 	local killerName = displayName(ent.lastAttackerId)
 	local deadStats = statsFor(ent)
 
-	-- Ghi công cho kẻ hạ Tàu Mẹ này.
+	-- Ghi công + THƯỞNG scrap cho kẻ hạ Tàu Mẹ này.
 	local killer = ent.lastAttackerId and GameState.motherships[ent.lastAttackerId]
-	if killer and killer.stats then killer.stats.mothershipsKilled += 1 end
+	if killer then
+		if killer.stats then killer.stats.mothershipsKilled += 1 end
+		EconomySystem.add(ent.lastAttackerId, Config.ECONOMY.MOTHERSHIP_KILL_REWARD)
+		EconomySystem.addGem(ent.lastAttackerId, Config.ECONOMY.MOTHERSHIP_KILL_GEM) -- +gem
+	end
 
 	if ent.part then ent.part:Destroy() end
 	GameState.motherships[ownerId] = nil
-	-- Unit của chủ này sẽ được FleetSystem.cleanup tự dọn (owner đã mất)
+	-- Quân còn lại KHÔNG bị huỷ: biến thành TÀN QUÂN đứng im, ai chạm vào thì chiếm.
+	FleetSystem.convertToRemnants(ownerId)
 
 	if not wasBot then
 		-- Người chơi thua
@@ -117,6 +123,7 @@ local function damageEntity(ent, amount, attackerOwner)
 	if ent.kind == "Mothership" then
 		if not ent.alive then return end
 		if attackerOwner then ent.lastAttackerId = attackerOwner end -- nhớ ai bắn phát cuối
+		ent.lastDamageTime = os.clock() -- mốc "vừa trúng đòn" -> hoãn hồi máu
 		ent.hp -= amount
 		MothershipSystem.updateHealthBar(ent)
 		if ent.hp <= 0 then
@@ -125,8 +132,20 @@ local function damageEntity(ent, amount, attackerOwner)
 	elseif ent.kind == "Building" then
 		if not ent.part or not ent.part.Parent then return end
 		ent.hp -= amount
+		ent.lastDamageTime = os.clock() -- cho bot biết công trình đang bị đánh
 		BuildingSystem.updateHealthBar(ent)
+		-- Công trình của MÌNH bị địch đánh -> báo động minimap (throttle ~1s).
+		if attackerOwner and attackerOwner ~= ent.ownerId then
+			local p = Players:GetPlayerByUserId(ent.ownerId)
+			if p and (os.clock() - (ent.lastAlert or 0)) > 1 then
+				ent.lastAlert = os.clock()
+				Remotes.BuildingAlert:FireClient(p, ent.part.Position)
+			end
+		end
 		if ent.hp <= 0 then
+			if attackerOwner then -- thưởng scrap cho kẻ phá công trình địch
+				EconomySystem.add(attackerOwner, Config.ECONOMY.BUILDING_KILL_REWARD)
+			end
 			BuildingSystem.destroyBuilding(ent)
 		end
 	else -- Unit
@@ -167,27 +186,84 @@ local function shotBlockedByFleet(attackerPos, ship)
 	return false
 end
 
--- Enemy unit gần nhất Ở MỘT RING cụ thể (dùng cho BACKLINE_SEEK).
-local function nearestEnemyUnitInRing(u, ringName)
-	local pos = u.part.Position
+-------------------------------------------------------------------------------
+-- LƯỚI KHÔNG GIAN cho targeting (thay quét O(n²) bằng quét ô lân cận).
+-- Dựng 1 lần/frame ở updateCombat; findTarget chỉ duyệt các ô trong tầm.
+-------------------------------------------------------------------------------
+local GRID_CELL = 20
+local unitGrid = {} -- [cx][cz] = { unit, ... } — dựng lại mỗi frame
+
+local function rebuildUnitGrid()
+	table.clear(unitGrid)
+	for _, u in ipairs(GameState.units) do
+		if u.part and u.part.Parent and not u.remnant then -- tàn quân trung lập: không vào lưới target
+			local p = u.part.Position
+			local cx = math.floor(p.X / GRID_CELL)
+			local cz = math.floor(p.Z / GRID_CELL)
+			local col = unitGrid[cx]
+			if not col then col = {}; unitGrid[cx] = col end
+			local cell = col[cz]
+			if not cell then cell = {}; col[cz] = cell end
+			cell[#cell + 1] = u
+		end
+	end
+end
+
+-- Enemy unit gần nhất trong tầm quanh `pos`, chỉ duyệt ô lân cận.
+-- ringName (tuỳ chọn): chỉ tính unit thuộc ring đó. reject (tuỳ chọn): loại 1 unit.
+local function gridNearestEnemyUnit(pos, myOwner, range, ringName, reject)
+	local cx = math.floor(pos.X / GRID_CELL)
+	local cz = math.floor(pos.Z / GRID_CELL)
+	local r = math.ceil(range / GRID_CELL)
 	local best, bestD
-	for _, other in ipairs(GameState.units) do
-		if other.ownerId ~= u.ownerId and other.ring == ringName and other.part and other.part.Parent then
-			local d = (other.part.Position - pos).Magnitude
-			if d <= u.range and (not bestD or d < bestD) then best, bestD = other, d end
+	for gx = cx - r, cx + r do
+		local col = unitGrid[gx]
+		if col then
+			for gz = cz - r, cz + r do
+				local cell = col[gz]
+				if cell then
+					for _, o in ipairs(cell) do
+						if o.ownerId ~= myOwner and o ~= reject and o.part and o.part.Parent
+							and (not ringName or o.ring == ringName) then
+							local d = (o.part.Position - pos).Magnitude
+							if d <= range and (not bestD or d < bestD) then best, bestD = o, d end
+						end
+					end
+				end
+			end
 		end
 	end
 	return best
 end
 
--- Tối đa `n` enemy UNIT gần nhất trong tầm (dùng cho MULTI_TARGET).
+-- Enemy unit gần nhất Ở MỘT RING cụ thể (dùng cho BACKLINE_SEEK).
+local function nearestEnemyUnitInRing(u, ringName)
+	return gridNearestEnemyUnit(u.part.Position, u.ownerId, u.range, ringName)
+end
+
+-- Tối đa `n` enemy UNIT gần nhất trong tầm (dùng cho MULTI_TARGET) — quét lưới.
 local function nearestEnemyUnits(u, n)
 	local pos = u.part.Position
+	local myOwner = u.ownerId
+	local range = u.range
+	local cx = math.floor(pos.X / GRID_CELL)
+	local cz = math.floor(pos.Z / GRID_CELL)
+	local r = math.ceil(range / GRID_CELL)
 	local list = {}
-	for _, other in ipairs(GameState.units) do
-		if other.ownerId ~= u.ownerId and other.part and other.part.Parent then
-			local d = (other.part.Position - pos).Magnitude
-			if d <= u.range then list[#list + 1] = { u = other, d = d } end
+	for gx = cx - r, cx + r do
+		local col = unitGrid[gx]
+		if col then
+			for gz = cz - r, cz + r do
+				local cell = col[gz]
+				if cell then
+					for _, other in ipairs(cell) do
+						if other.ownerId ~= myOwner and other.part and other.part.Parent then
+							local d = (other.part.Position - pos).Magnitude
+							if d <= range then list[#list + 1] = { u = other, d = d } end
+						end
+					end
+				end
+			end
 		end
 	end
 	table.sort(list, function(a, b) return a.d < b.d end)
@@ -205,14 +281,9 @@ local function findTarget(u)
 	-- UNITS_ONLY (tháp phòng thủ): ưu tiên enemy Unit gần nhất; không có thì bắn
 	-- Tàu Mẹ địch đang áp sát base (nếu không bị fleet của nó chắn). KHÔNG bắn building.
 	if u.targeting == "UNITS_ONLY" then
-		local best, bestD
-		for _, o in ipairs(GameState.units) do
-			if o.ownerId ~= myOwner and o.part and o.part.Parent then
-				local d = (o.part.Position - pos).Magnitude
-				if d <= range and (not bestD or d < bestD) then best, bestD = o, d end
-			end
-		end
+		local best = gridNearestEnemyUnit(pos, myOwner, range)
 		if best then return best end
+		local bestD
 		for _, e in pairs(GameState.motherships) do
 			if e.ownerId ~= myOwner and e.alive and e.part then
 				local d = (e.part.Position - pos).Magnitude
@@ -242,18 +313,10 @@ local function findTarget(u)
 		if core then return core end
 	end
 
-	local best, bestDist
-
-	-- 1) enemy UNITS
-	for _, other in ipairs(GameState.units) do
-		if other.ownerId ~= myOwner and other.part and other.part.Parent then
-			local d = (other.part.Position - pos).Magnitude
-			if d <= range and (not bestDist or d < bestDist) then
-				best, bestDist = other, d
-			end
-		end
-	end
+	-- 1) enemy UNITS (quét lưới, không O(n²))
+	local best = gridNearestEnemyUnit(pos, myOwner, range)
 	if best then return best end
+	local bestDist
 
 	-- 2) enemy BUILDINGS
 	for _, b in ipairs(GameState.buildings) do
@@ -285,7 +348,7 @@ end
 local function applyAoe(centerPos, radius, attackerOwner, dmg, primary)
 	local hits = {}
 	for _, other in ipairs(GameState.units) do
-		if other ~= primary and other.ownerId ~= attackerOwner and other.part and other.part.Parent then
+		if other ~= primary and other.ownerId ~= attackerOwner and not other.remnant and other.part and other.part.Parent then
 			if (other.part.Position - centerPos).Magnitude <= radius then
 				table.insert(hits, other)
 			end
@@ -307,6 +370,7 @@ end
 local function fireEntity(attacker, dt)
 	local part = attacker.part
 	if not part or not part.Parent then return end
+	if attacker.remnant then return end -- tàn quân trung lập: không bắn
 
 	-- Bước 3b: Kamikaze không bắn (chỉ lao va chạm) -> CombatSystem lo riêng.
 	if attacker.attack == "COLLISION" then return end
@@ -504,6 +568,7 @@ local function updateKamikazes(dt)
 end
 
 local function updateCombat(dt)
+	rebuildUnitGrid() -- dựng lưới 1 lần/frame để findTarget quét ô lân cận (không O(n²))
 	updateShockwaves(dt)
 	updateKamikazes(dt)
 

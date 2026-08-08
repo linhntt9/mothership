@@ -68,7 +68,7 @@ local VISUAL = {
 	-- Footprint ~24 (nhỏ gọn), cao 7 ≈ chiều cao Tàu Mẹ (dẹt).
 	ScrapMine = { size = Vector3.new(24, 7, 24), color = Color3.fromRGB(230, 180, 60) },
 	DroneHub  = { size = Vector3.new(24, 7, 24), color = Color3.fromRGB(90, 190, 230) },
-	LaserSat  = { size = Vector3.new(22, 8, 22), color = Color3.fromRGB(120, 220, 255) },
+	LaserSat  = { size = Vector3.new(22, 8, 22), color = Color3.fromRGB(80, 220, 120) },
 	PlasmaSat = { size = Vector3.new(24, 8, 24), color = Color3.fromRGB(210, 130, 255) },
 }
 
