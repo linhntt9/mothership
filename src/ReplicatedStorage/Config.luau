@@ -37,6 +37,8 @@ Config.PLAYER_PREFIX = "[Captain] "
 -- Bot AI — chơi như người: xây căn cứ (mine + hub + tháp), gom scrap, mua quân,
 -- bành trướng & raid kinh tế địch.
 Config.BOT = {
+	MAINTAIN = 5,            -- LUÔN giữ đủ N bot sống trong sân (bot chết -> tự respawn).
+	                         -- 0 = tắt (chế độ cổ điển: diệt hết bot là thắng).
 	DECISION_INTERVAL = 1.2, -- giây giữa 2 lần "suy nghĩ" (nhanh hơn = phản ứng lẹ)
 	TARGET_MINES = 5,        -- số mine bot cố chiếm (bành trướng kinh tế)
 	TARGET_HUBS = 4,         -- số nhà (Hub) để nâng cap dần như người chơi
@@ -274,6 +276,7 @@ Config.TEAM = {
 Config.ECONOMY = {
 	START_SCRAP = 500,
 	INCOME_TICK = 1.0, -- giây
+	BASE_INCOME = 10,  -- thu nhập nền: luôn +10 scrap/s dù chưa có mine
 	MOTHERSHIP_KILL_REWARD = 1000, -- thưởng scrap khi hạ 1 Tàu Mẹ địch
 	MOTHERSHIP_KILL_GEM = 1,       -- thưởng gem khi hạ 1 Tàu Mẹ địch
 	BUILDING_KILL_REWARD = 100,    -- thưởng scrap khi phá 1 công trình địch

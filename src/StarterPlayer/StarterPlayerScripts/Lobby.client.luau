@@ -87,7 +87,7 @@ ctrlHint.Parent = gui
 -------------------------------------------------------------------------------
 -- Nút panel dọc (icon + label + badge)
 -------------------------------------------------------------------------------
-local function sideButton(parent, order, icon, label, badge)
+local function sideButton(parent, order, icon, label, badge, onClick)
 	local b = Instance.new("TextButton")
 	b.LayoutOrder = order
 	b.Size = UDim2.new(0, 88, 0, 80)
@@ -113,7 +113,9 @@ local function sideButton(parent, order, icon, label, badge)
 		local dc = Instance.new("UICorner"); dc.CornerRadius = UDim.new(1, 0); dc.Parent = d
 		d.Parent = b
 	end
-	b.Activated:Connect(function() showToast(label .. " — Sắp có (Phase sau)") end)
+	b.Activated:Connect(function()
+		if onClick then onClick() else showToast(label .. " — Sắp có (Phase sau)") end
+	end)
 	trackHover(b)
 	b.Parent = parent
 	return b
@@ -137,7 +139,8 @@ end
 
 local leftBar = sideBar("left")
 sideButton(leftBar, 1, "🛒", "Store", false)
-sideButton(leftBar, 2, "🎒", "Bag", false)
+sideButton(leftBar, 2, "🚀", "My Ship", false, function() ClientBus.openIndex:Fire("MYSHIP") end)
+sideButton(leftBar, 3, "📖", "Index", false, function() ClientBus.openIndex:Fire("Quân") end)
 
 local rightBar = sideBar("right")
 sideButton(rightBar, 1, "🎁", "Gifts", true)
@@ -212,6 +215,10 @@ local gpc = Instance.new("UICorner"); gpc.CornerRadius = UDim.new(0, 8); gpc.Par
 gemPlus.Parent = gemChip
 gemPlus.Activated:Connect(function() showToast("Mua Gems (Robux) — Sắp có") end)
 trackHover(gemPlus)
+-- Gem kiếm được khi chiến đấu (server lưu theo player) -> hiện ở sảnh.
+Remotes.GemUpdate.OnClientEvent:Connect(function(g)
+	gemText.Text = "💎 " .. tostring(g)
+end)
 
 -------------------------------------------------------------------------------
 -- Panel shop (class/skin) + panel cổng "Vào trận" — hiện khi vào vùng cổng 3D

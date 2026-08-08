@@ -205,8 +205,13 @@ end
 -- WASD (PC) -> hướng theo camera. IsKeyDown = phím vật lý (Telex-proof); không lái khi gõ ⚙.
 local function wasdDir()
 	if UserInputService:GetFocusedTextBox() then return Vector3.zero end
-	local x = (UserInputService:IsKeyDown(Enum.KeyCode.D) and 1 or 0) - (UserInputService:IsKeyDown(Enum.KeyCode.A) and 1 or 0)
-	local z = (UserInputService:IsKeyDown(Enum.KeyCode.W) and 1 or 0) - (UserInputService:IsKeyDown(Enum.KeyCode.S) and 1 or 0)
+	-- Hỗ trợ cả WASD lẫn phím mũi tên (↑↓←→).
+	local D = UserInputService:IsKeyDown(Enum.KeyCode.D) or UserInputService:IsKeyDown(Enum.KeyCode.Right)
+	local A = UserInputService:IsKeyDown(Enum.KeyCode.A) or UserInputService:IsKeyDown(Enum.KeyCode.Left)
+	local W = UserInputService:IsKeyDown(Enum.KeyCode.W) or UserInputService:IsKeyDown(Enum.KeyCode.Up)
+	local S = UserInputService:IsKeyDown(Enum.KeyCode.S) or UserInputService:IsKeyDown(Enum.KeyCode.Down)
+	local x = (D and 1 or 0) - (A and 1 or 0)
+	local z = (W and 1 or 0) - (S and 1 or 0)
 	if x == 0 and z == 0 then return Vector3.zero end
 	return camDir(x, z)
 end

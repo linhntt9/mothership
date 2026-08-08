@@ -53,10 +53,12 @@ function EconomySystem.add(ownerId, amount)
 	EconomySystem.sendScrapUpdate(ownerId)
 end
 
--- GEM (thưởng khi hạ Tàu Mẹ). Lưu trên entry.gems.
+-- GEM (thưởng khi hạ Tàu Mẹ). Lưu THEO player (bền qua trận<->sảnh), không mất
+-- khi Tàu Mẹ chết / đổi cảnh. Key = ownerId (bot cũng có nhưng không hiện).
+local gemsByOwner = {}
+
 function EconomySystem.getGems(ownerId)
-	local e = GameState.motherships[ownerId]
-	return e and e.gems or 0
+	return gemsByOwner[ownerId] or 0
 end
 
 function EconomySystem.sendGemUpdate(ownerId)
@@ -67,15 +69,13 @@ function EconomySystem.sendGemUpdate(ownerId)
 end
 
 function EconomySystem.addGem(ownerId, amount)
-	local e = GameState.motherships[ownerId]
-	if not e then return end
-	e.gems = (e.gems or 0) + amount
+	gemsByOwner[ownerId] = (gemsByOwner[ownerId] or 0) + amount
 	EconomySystem.sendGemUpdate(ownerId)
 end
 
 -- Tổng income/giây của owner (đọc thẳng Config theo tier -> tune sống được).
 local function incomeOf(ownerId)
-	local total = 0
+	local total = Config.ECONOMY.BASE_INCOME or 0 -- thu nhập nền +10/s
 	for _, b in ipairs(GameState.buildings) do
 		if b.ownerId == ownerId and b.buildingType == "ScrapMine" then
 			local stats = Config.ECONOMY.SCRAP_MINE[b.tier]

@@ -253,6 +253,16 @@ function BuildingSystem.destroyBuilding(b)
 	end
 end
 
+-- Huỷ toàn bộ công trình của 1 owner (khi Tàu Mẹ của họ chết).
+function BuildingSystem.destroyOwnerBuildings(ownerId)
+	for i = #GameState.buildings, 1, -1 do
+		local b = GameState.buildings[i]
+		if b.ownerId == ownerId then
+			BuildingSystem.destroyBuilding(b) -- tự giải phóng mỏ + cập nhật cap
+		end
+	end
+end
+
 function BuildingSystem.clearAll()
 	for i = #GameState.buildings, 1, -1 do
 		local b = GameState.buildings[i]

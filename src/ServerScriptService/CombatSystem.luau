@@ -63,7 +63,7 @@ local function statsFor(ent)
 		mothershipsKilled = s.mothershipsKilled or 0,
 		scrapSpent = math.floor(s.scrapSpent or 0),
 		unitsLost = s.unitsLost or 0,
-		gems = 0, -- nhận Gems cuối trận: Phase meta (3), tạm 0
+		gems = EconomySystem.getGems(ent.ownerId), -- gem thật đã kiếm được
 		fleet = fleet,
 	}
 end
@@ -87,6 +87,8 @@ local function killMothership(ent)
 
 	if ent.part then ent.part:Destroy() end
 	GameState.motherships[ownerId] = nil
+	-- Công trình của owner này biến mất theo Tàu Mẹ.
+	BuildingSystem.destroyOwnerBuildings(ownerId)
 	-- Quân còn lại KHÔNG bị huỷ: biến thành TÀN QUÂN đứng im, ai chạm vào thì chiếm.
 	FleetSystem.convertToRemnants(ownerId)
 
@@ -101,8 +103,9 @@ local function killMothership(ent)
 			})
 		end
 	else
-		-- 1 địch chết -> nếu hết địch thì mọi người chơi còn sống đều thắng
-		if not anyEnemyAlive() then
+		-- 1 địch chết -> nếu hết địch thì mọi người chơi còn sống đều thắng.
+		-- (Bỏ qua khi MAINTAIN>0: bot luôn respawn nên không có "thắng do diệt sạch".)
+		if (Config.BOT.MAINTAIN or 0) <= 0 and not anyEnemyAlive() then
 			for _, e in pairs(GameState.motherships) do
 				if not e.isBot then
 					local p = Players:GetPlayerByUserId(e.ownerId)

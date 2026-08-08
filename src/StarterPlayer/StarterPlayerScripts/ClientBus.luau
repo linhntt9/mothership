@@ -20,4 +20,11 @@ ClientBus.cancelBuild = Instance.new("BindableEvent")
 -- Fire(open: bool) mở/đóng panel Heroes (khi Tàu Mẹ vào/ra vùng CLASS ở sảnh).
 ClientBus.openHeroes = Instance.new("BindableEvent")
 
+-- Fire(tabName?: string) mở Index (bách khoa) — gọi từ nút sidebar sảnh / HUD.
+--   tabName: "Quân" | "Công trình" | "Tàu Mẹ" (nil = tab hiện tại).
+ClientBus.openIndex = Instance.new("BindableEvent")
+
+-- (dev) Cờ hiện vị trí bot trên minimap (bật/tắt từ bảng ⚙). Minimap đọc mỗi lần vẽ.
+ClientBus.showBots = false
+
 return ClientBus

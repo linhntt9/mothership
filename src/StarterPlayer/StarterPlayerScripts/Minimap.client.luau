@@ -24,6 +24,7 @@ local Workspace = game:GetService("Workspace")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Config = require(ReplicatedStorage.Config)
+local ClientBus = require(script.Parent.ClientBus)
 
 local player = Players.LocalPlayer
 local playerGui = player:WaitForChild("PlayerGui")
@@ -220,6 +221,16 @@ local function redraw()
 		lastShipPos = mp
 	else
 		arrow.Visible = false
+	end
+
+	-- (dev) Hiện vị trí BOT khi bật nút "👁 Bot" trong bảng ⚙.
+	if ClientBus.showBots and ships then
+		for _, part in ipairs(ships:GetChildren()) do
+			if part:IsA("BasePart") and part.Name:match("^Mothership_")
+				and part.Name ~= ("Mothership_" .. myId) then
+				placeDot(part.Position.X, part.Position.Z, 10, part.Color, nil)
+			end
+		end
 	end
 
 	-- Ẩn các chấm thừa của lần vẽ trước

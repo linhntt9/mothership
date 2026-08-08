@@ -23,6 +23,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Config = require(ReplicatedStorage.Config)
 local Remotes = require(ReplicatedStorage.Remotes)
+local ClientBus = require(script.Parent.ClientBus)
 
 local player = Players.LocalPlayer
 local playerGui = player:WaitForChild("PlayerGui")
@@ -93,6 +94,7 @@ end
 -- ===== TAB "BOT" — chỉnh AI bot =====
 add("— BOT AI —", nil, "Bot")
 add("Số bot đầu trận (Chơi lại)", "BOT_COUNT", "Bot")
+add("Giữ bot trong sân (auto-respawn)", "BOT.MAINTAIN", "Bot")
 add("Nhịp quyết định (s)", "BOT.DECISION_INTERVAL", "Bot")
 add("Số mine mục tiêu", "BOT.TARGET_MINES", "Bot")
 add("Ngưỡng tấn công (x địch)", "BOT.AGGRESS_RATIO", "Bot")
@@ -222,9 +224,15 @@ local function rowBtn(x, w, color, text, onClick)
 	b.Activated:Connect(onClick)
 	return b
 end
-rowBtn(0, 0.38, Color3.fromRGB(180, 60, 60), "☠ Chơi lại", function() Remotes.Restart:FireServer() end)
-rowBtn(0.38, 0.28, Color3.fromRGB(60, 120, 90), "＋ Bot", function() Remotes.AddBot:FireServer() end)
-rowBtn(0.66, 0.34, Color3.fromRGB(70, 150, 110), "＋ Bot gần", function() Remotes.AddBot:FireServer(true) end)
+rowBtn(0, 0.30, Color3.fromRGB(180, 60, 60), "☠ Chơi lại", function() Remotes.Restart:FireServer() end)
+rowBtn(0.30, 0.20, Color3.fromRGB(60, 120, 90), "＋ Bot", function() Remotes.AddBot:FireServer() end)
+rowBtn(0.50, 0.26, Color3.fromRGB(70, 150, 110), "＋ Bot gần", function() Remotes.AddBot:FireServer(true) end)
+local botBtn
+botBtn = rowBtn(0.76, 0.24, Color3.fromRGB(70, 90, 130), "👁 Bot", function()
+	ClientBus.showBots = not ClientBus.showBots
+	botBtn.Text = ClientBus.showBots and "👁 Bot ✓" or "👁 Bot"
+	botBtn.BackgroundColor3 = ClientBus.showBots and Color3.fromRGB(80, 150, 90) or Color3.fromRGB(70, 90, 130)
+end)
 
 -- Tab bar (Game / Bot) — lọc field theo tab.
 local setTab            -- gán sau khi tạo rows

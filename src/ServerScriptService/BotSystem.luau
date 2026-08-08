@@ -419,7 +419,30 @@ function BotSystem.init()
 		end
 	end)
 
-	print("[BotSystem] ready — " .. Config.BOT_COUNT .. " bots")
+	-- AUTO-RESPAWN: luôn giữ đủ Config.BOT.MAINTAIN bot sống trong sân (khi đang trận).
+	-- -> người chơi luôn có đội quân khác để đụng độ, không bao giờ "trống sân".
+	task.spawn(function()
+		while true do
+			task.wait(3)
+			local keep = Config.BOT.MAINTAIN or 0
+			if MatchState.isPlaying() and keep > 0 then
+				-- dọn state bot đã chết (mothership đã bị huỷ)
+				for id in pairs(botStates) do
+					if not GameState.motherships[id] then botStates[id] = nil end
+				end
+				-- đếm bot còn sống + bù cho đủ
+				local live = 0
+				for _, e in pairs(GameState.motherships) do
+					if e.isBot and e.alive then live += 1 end
+				end
+				for _ = 1, keep - live do
+					BotSystem.addBot()
+				end
+			end
+		end
+	end)
+
+	print("[BotSystem] ready — giữ " .. tostring(Config.BOT.MAINTAIN) .. " bot")
 end
 
 return BotSystem

@@ -16,6 +16,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Config = require(ReplicatedStorage.Config)
 local Remotes = require(ReplicatedStorage.Remotes)
+local ClientBus = require(script.Parent.ClientBus)
 
 local player = Players.LocalPlayer
 local playerGui = player:WaitForChild("PlayerGui")
@@ -30,10 +31,12 @@ local CAT_COLOR = {
 	Artillery = Color3.fromRGB(255, 170, 90),
 }
 
-local selectedHeroId = nil
-local ownedSet = {}
+-- Fallback: luôn coi như đã sở hữu con mặc định (phòng khi lỡ event HeroState lúc join).
+local selectedHeroId = Config.DEFAULT_HERO
+local ownedSet = { [Config.DEFAULT_HERO] = true }
 local TABS = { "Quân", "Công trình", "Tàu Mẹ" }
 local activeTab = "Quân"
+local myShipMode = false -- true: chỉ hiện Tàu Mẹ đã sở hữu + Equip (mở từ nút My Ship)
 
 -- Vai trò ngắn của từng unit (hiển thị trong Index).
 local UNIT_ORDER = { "Drone", "Frigate", "Destroyer", "PlasmaCruiser", "Interceptor", "Battleship", "SiegeRailgun", "Titan", "Kamikaze" }
@@ -71,6 +74,7 @@ openBtn.TextSize = 15
 openBtn.TextColor3 = GOLD
 openBtn.Text = "📖 Index"
 local obc = Instance.new("UICorner"); obc.CornerRadius = UDim.new(0, 8); obc.Parent = openBtn
+openBtn.Visible = false -- ở sảnh dùng nút sidebar; nút này chỉ hiện trong TRẬN
 openBtn.Parent = gui
 
 local dim = Instance.new("TextButton")
@@ -141,7 +145,7 @@ end
 
 local function clearList()
 	for _, c in ipairs(list:GetChildren()) do
-		if c:IsA("Frame") then c:Destroy() end
+		if c:IsA("GuiObject") then c:Destroy() end -- xoá cả Frame lẫn TextLabel (giữ UIListLayout)
 	end
 end
 
@@ -217,9 +221,46 @@ local function renderMotherships()
 	end
 end
 
+-- MY SHIP: CHỈ Tàu Mẹ đã sở hữu, nút Equip / trạng thái Đã Equip.
+local function renderMyShip()
+	local order = 0
+	for _, hero in ipairs(Config.HEROES) do
+		if ownedSet[hero.id] then
+			order += 1
+			local isSel = (hero.id == selectedHeroId)
+			local rarCol = (Config.RARITY_COLOR and Config.RARITY_COLOR[hero.rarity]) or Color3.fromRGB(200, 200, 200)
+			local card = baseCard(order, hero.color or Color3.new(1, 1, 1), 92)
+			card.BackgroundColor3 = isSel and CARD_SEL or CARD_BG
+			addLabel(card, 44, 8, -180, 22, hero.name, CAT_COLOR[hero.cat] or Color3.new(1, 1, 1), 17, true)
+			addLabel(card, 44, 30, -180, 16, string.upper(hero.rarity or "") .. " · " .. hero.cat, rarCol, 12, true)
+			addLabel(card, 44, 48, -180, 38, hero.desc, Color3.fromRGB(185, 195, 212), 12, false, true)
+			local btn = Instance.new("TextButton")
+			btn.AnchorPoint = Vector2.new(1, 0.5); btn.Position = UDim2.new(1, -14, 0.5, 0)
+			btn.Size = UDim2.new(0, 120, 0, 42); btn.Font = Enum.Font.GothamBold; btn.TextSize = 14
+			btn.TextColor3 = Color3.new(1, 1, 1); btn.ZIndex = 23; btn.Parent = card
+			local bc = Instance.new("UICorner"); bc.CornerRadius = UDim.new(0, 8); bc.Parent = btn
+			if isSel then
+				btn.Text = "✓ Đã Equip"; btn.BackgroundColor3 = Color3.fromRGB(70, 120, 70); btn.AutoButtonColor = false
+			else
+				btn.Text = "Equip"; btn.BackgroundColor3 = Color3.fromRGB(60, 90, 150)
+				btn.Activated:Connect(function() selectHero(hero.id) end)
+			end
+		end
+	end
+	if order == 0 then
+		local lbl = Instance.new("TextLabel")
+		lbl.Size = UDim2.new(1, 0, 0, 60); lbl.BackgroundTransparency = 1
+		lbl.Font = Enum.Font.Gotham; lbl.TextSize = 15; lbl.TextWrapped = true
+		lbl.Text = "Chưa sở hữu Tàu Mẹ nào.\nMở Rương ở zone TÀU MẸ để nhận!"
+		lbl.TextColor3 = Color3.fromRGB(180, 188, 205); lbl.ZIndex = 22; lbl.Parent = list
+	end
+end
+
 local function render()
 	clearList()
-	if activeTab == "Quân" then
+	if myShipMode then
+		renderMyShip()
+	elseif activeTab == "Quân" then
 		renderUnits()
 	elseif activeTab == "Công trình" then
 		renderBuildings()
@@ -257,9 +298,20 @@ end
 -------------------------------------------------------------------------------
 local function setOpen(open)
 	dim.Visible = open; panel.Visible = open
-	if open then setTab(activeTab) end
+	if open then
+		tabRow.Visible = not myShipMode
+		title.Text = myShipMode and "🚀 TÀU CỦA TÔI" or "📖 MOTHERSHIP INDEX"
+		-- Không có tab -> list lấp luôn khoảng tab.
+		if myShipMode then
+			list.Position = UDim2.new(0, 16, 0, 54); list.Size = UDim2.new(1, -32, 1, -70)
+			render()
+		else
+			list.Position = UDim2.new(0, 16, 0, 98); list.Size = UDim2.new(1, -32, 1, -114)
+			setTab(activeTab)
+		end
+	end
 end
-openBtn.Activated:Connect(function() setOpen(not panel.Visible) end)
+openBtn.Activated:Connect(function() myShipMode = false; setOpen(not panel.Visible) end)
 closeBtn.Activated:Connect(function() setOpen(false) end)
 dim.Activated:Connect(function() setOpen(false) end)
 
@@ -267,4 +319,20 @@ Remotes.HeroState.OnClientEvent:Connect(function(heroId, owned)
 	selectedHeroId = heroId
 	if type(owned) == "table" then ownedSet = owned end
 	if panel.Visible then render() end
+end)
+
+-- Mở Index từ nút sidebar sảnh (My Ship / Index) — có thể chỉ định tab.
+ClientBus.openIndex.Event:Connect(function(tab)
+	if tab == "MYSHIP" then
+		myShipMode = true
+	else
+		myShipMode = false
+		if type(tab) == "string" and tabButtons[tab] then activeTab = tab end
+	end
+	setOpen(true)
+end)
+
+-- Nút 📖 chỉ hiện trong TRẬN (ở sảnh đã có nút sidebar).
+Remotes.MatchState.OnClientEvent:Connect(function(s)
+	openBtn.Visible = (s == "playing")
 end)

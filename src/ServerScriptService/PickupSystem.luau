@@ -172,6 +172,7 @@ local function updatePickups(dt)
 				local dist = delta.Magnitude
 				if dist <= Config.PICKUP.COLLECT_DIST then
 					EconomySystem.add(p.flyingTo, p.value) -- cộng scrap cho chủ
+						if MatchState.isPlaying() then spawnRandomOrb() end -- HỒI LẠI: thu 1 -> sinh 1 orb mới
 					p.part:Destroy()
 					table.remove(GameState.pickups, i)
 				else
