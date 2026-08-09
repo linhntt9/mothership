@@ -110,6 +110,8 @@ Config.MOTHERSHIP = {
 	RANGE = 48,
 	FIRE_RATE = 1.5,     -- shot/s
 	AOE = 10,            -- bán kính sát thương lan quanh mục tiêu
+	PROJ_SPEED = 110,    -- (Lordz) Tàu Mẹ bắn ĐẠN BAY (không laser); tốc độ đạn (studs/s)
+	PROJ_RADIUS = 2.2,   -- bán kính đạn Tàu Mẹ
 
 	-- Tự hồi máu khi RA KHỎI giao tranh (không trúng đòn trong REGEN_DELAY giây).
 	REGEN_DELAY = 6,     -- giây kể từ phát trúng cuối mới bắt đầu hồi
@@ -139,8 +141,23 @@ Config.FLEET = {
 	SEPARATION_STRENGTH = 0.4, -- phần overlap giải quyết mỗi frame (0 = tắt)
 	SEPARATION_MAX = 4,        -- đẩy tối đa mỗi frame (studs) để không giật
 	CAPTURE_RANGE = 18,        -- Tàu Mẹ tới trong tầm này thì CHIẾM được tàn quân (studs)
-	SPLIT_DIST = 25,       -- khoảng tách tối đa của 2 cánh khi Split
-	SPLIT_RAMP = 0.4,      -- giây để tách/gộp mượt (ramp 0<->SPLIT_DIST)
+	-- VỊ TRÍ VUA + CHASE CON TRỎ (Lordz): Tàu Mẹ (Vua) luôn nằm trong cụm "lõi" tại
+	-- vị trí của nó; C-1 cụm "vệ tinh" (KHÔNG có Vua) TỰ CHASE con trỏ theo mô hình
+	-- multi-vector attraction — funnel (gần con trỏ thì chụm), slingshot (quán tính ->
+	-- cụm nhanh vọt qua rồi lượn), angular deflection (đẩy nhau khi quá sát).
+	-- Ngừng bấm SPLIT_REJOIN_DELAY giây -> tự gộp dần, vệ tinh hút về Vua rồi hoà lại.
+	SPLIT_MAX_LEVEL      = 4,   -- 2^4 = 16 cụm tối đa
+	SPLIT_REJOIN_DELAY   = 3.0, -- giây sau lần split cuối mới bắt đầu tự gộp
+	SPLIT_REJOIN_STEP    = 0.6, -- giây giữa 2 bậc gộp (16→8→4→2→1)
+	-- Giữ SPLIT DÀY ĐẶC (không toả mỏng/hở giữa): cụm bám SÁT nhau + gần Vua.
+	SPLIT_SAT_SPREAD     = 10,  -- độ giãn lane vệ tinh (nhỏ = cụm chụm, đặc)
+	SPLIT_SAT_FUNNEL     = 40,  -- khoảng funnel co lane về 0
+	SPLIT_SAT_ACCEL      = 12,  -- bám gắt hơn (ít trôi/hở)
+	SPLIT_SAT_SPEED_MULT = 1.3, -- trần tốc độ anchor = max(tốc TB cụm, tốc Tàu Mẹ) × mult
+	SPLIT_SAT_MINGAP     = 12,  -- cho phép cụm sát/chồng nhẹ -> khối đặc, không thưa
+	SPLIT_SAT_REPEL      = 55,  -- đẩy góc vừa phải
+	SPLIT_SAT_BURST      = 60,  -- xung tốc bung nhẹ (không văng xa)
+	SPLIT_SAT_MAX_RANGE  = 70,  -- vệ tinh KHÔNG rời Vua quá 70 studs -> ôm cụm, lấp giữa
 	-- Vị trí vòng đội hình xếp theo RING của từng unit: CORE (trong) -> GUARD (giữa)
 	-- -> SCREEN (ngoài). Bán kính thực do INNER_RADIUS + RING_GAP nở đồng tâm ra
 	-- ngoài (≈ CORE 12 / GUARD 20 / SCREEN 28). weight & aoe nằm trong Config.UNITS.
@@ -152,7 +169,8 @@ Config.FLEET = {
 -- Schema mỗi unit: displayName, cost, hp, dmg, range, fireRate, speed,
 --   ring (SCREEN|GUARD|CORE), weight, aoeRadius (0=đơn mục tiêu),
 --   attack (HITSCAN|COLLISION), targeting (STANDARD|BUILDING_ONLY|
---   MOTHERSHIP_FLEET_ONLY|BACKLINE_SEEK|MULTI_TARGET), special (nil|GRAVITY_STUN|KAMIKAZE).
+--   MOTHERSHIP_FLEET_ONLY|BACKLINE_SEEK|CONE), special (nil|GRAVITY_STUN|KAMIKAZE).
+--   projectile/projSpeed/projRadius (Lordz: bắn đạn bay), coneAngle (Dragon phun nón).
 -- Bước 0: 4 unit cũ giữ nguyên chỉ số, chỉ ĐỔI RING (tank ra GUARD, pháo vào CORE).
 Config.UNITS = {
 	-- cost / weight (=population) / maxCount lấy theo canon Lordz. hp/dmg/range/
@@ -160,40 +178,46 @@ Config.UNITS = {
 	-- lượng unit loại đó 1 owner được có cùng lúc.
 	Drone = { -- Soldier
 		displayName = "Drone",
-		cost = 15, hp = 40, dmg = 6, range = 18, fireRate = 2.0, speed = 55,
+		cost = 15, hp = 40, dmg = 6, range = 6, fireRate = 2.0, speed = 62,
 		ring = "SCREEN", weight = 1, aoeRadius = 0, maxCount = 200,
-		attack = "HITSCAN", targeting = "STANDARD",
+		attack = "COLLISION", targeting = "STANDARD",
+		melee = true, aggro = 170, -- (Lordz) Soldier cận chiến: bầy lao vào đánh áp sát
 	},
 	Frigate = { -- Archer
 		displayName = "Frigate",
 		cost = 125, hp = 120, dmg = 18, range = 40, fireRate = 1.2, speed = 32,
 		ring = "CORE", weight = 2, aoeRadius = 0, maxCount = 200,
 		attack = "HITSCAN", targeting = "STANDARD",
+		projectile = true, projSpeed = 95, projRadius = 1.6, -- (Lordz) bắn TÊN bay, trúng địch đầu tiên
 	},
 	Destroyer = { -- Barbarian (canon không nêu số -> ước lượng)
 		displayName = "Destroyer",
-		cost = 200, hp = 600, dmg = 20, range = 22, fireRate = 0.8, speed = 22,
+		cost = 200, hp = 600, dmg = 30, range = 8, fireRate = 0.8, speed = 42,
 		ring = "GUARD", weight = 3, aoeRadius = 0, maxCount = 100,
-		attack = "HITSCAN", targeting = "STANDARD",
+		attack = "COLLISION", targeting = "STANDARD",
+		melee = true, aggro = 180, -- (Lordz) CẬN CHIẾN: lao vào địch trong tầm aggro, đánh áp sát
 	},
 	PlasmaCruiser = { -- Mage
 		displayName = "Plasma",
 		cost = 450, hp = 200, dmg = 30, range = 34, fireRate = 0.6, speed = 26,
 		ring = "CORE", weight = 8, aoeRadius = 12, maxCount = 125,
 		attack = "HITSCAN", targeting = "STANDARD",
+		projectile = true, projSpeed = 62, projRadius = 2.4, -- (Lordz) cầu lửa bay -> NỔ LAN tại điểm chạm
 	},
 	-- Bước 1 — biến thể targeting riêng (dùng chung khung hitscan):
 	Interceptor = { -- Knight
 		displayName = "Interceptor",
-		cost = 75, hp = 90, dmg = 12, range = 22, fireRate = 1.6, speed = 70,
+		cost = 75, hp = 90, dmg = 14, range = 7, fireRate = 1.6, speed = 88,
 		ring = "SCREEN", weight = 2, aoeRadius = 0, maxCount = 200,
-		attack = "HITSCAN", targeting = "BACKLINE_SEEK", -- ưu tiên pháo địch ở CORE
+		attack = "COLLISION", targeting = "STANDARD",
+		melee = true, aggro = 200, -- (Lordz) kỵ binh cận chiến: lao NHANH, phát hiện xa
 	},
-	Battleship = { -- Dragon
+	Battleship = { -- Dragon (bắn CỤM LASER)
 		displayName = "Battleship",
-		cost = 2500, hp = 900, dmg = 35, range = 34, fireRate = 1.0, speed = 24,
+		cost = 2500, hp = 900, dmg = 60, range = 42, fireRate = 0.35, speed = 24,
 		ring = "GUARD", weight = 15, aoeRadius = 0, maxCount = 66,
-		attack = "HITSCAN", targeting = "MULTI_TARGET", -- bắn tối đa 3 unit gần nhất
+		attack = "HITSCAN", targeting = "VOLLEY", -- bắn 1 CỤM laser vào nhiều địch; nhịp GIÃN
+		volleyCount = 8, -- số tia laser mỗi lượt bắn
 	},
 	-- Bước 2 — pháo công thành: CHỈ bắn Building, tầm xa nhất, bắn chậm có nạp đạn.
 	SiegeRailgun = { -- Ballista
@@ -202,13 +226,15 @@ Config.UNITS = {
 		ring = "CORE", weight = 10, aoeRadius = 0, maxCount = 100,
 		attack = "HITSCAN", targeting = "BUILDING_ONLY",
 		chargeTime = 0.5, -- telegraph: nạp đạn 0.5s trước khi bắn
+		projSpeed = 150, projRadius = 2.2, -- (Lordz) nạp xong bắn ĐẠN shell bay (không cờ projectile -> giữ nạp đạn)
 	},
 	-- Bước 3a — CC: mỗi 1/fireRate giây phát sóng xung STUN + đẩy lệch đội hình địch.
 	Titan = { -- Troll
 		displayName = "Titan",
-		cost = 3000, hp = 700, dmg = 15, range = 20, fireRate = 0.5, speed = 20,
+		cost = 3000, hp = 700, dmg = 40, range = 10, fireRate = 0.5, speed = 30,
 		ring = "GUARD", weight = 15, aoeRadius = 0, maxCount = 5,
-		attack = "HITSCAN", targeting = "STANDARD", special = "GRAVITY_STUN",
+		attack = "COLLISION", targeting = "STANDARD", special = "GRAVITY_STUN",
+		melee = true, aggro = 160, -- (Lordz) Troll cận chiến (vẫn phát sóng xung STUN quanh mình)
 		stunRadius = 18,    -- bán kính sóng xung
 		stunDuration = 1.5, -- giây địch không bắn được (refresh, không cộng dồn)
 		pushStrength = 10,  -- studs đẩy lệch khỏi slot (rồi lerp về, không teleport)
@@ -274,12 +300,26 @@ Config.TEAM = {
 -- ECONOMY
 -------------------------------------------------------------------------------
 Config.ECONOMY = {
-	START_SCRAP = 500,
+	START_SCRAP = 250, -- scrap khởi điểm của người chơi mới (level 1)
 	INCOME_TICK = 1.0, -- giây
 	BASE_INCOME = 10,  -- thu nhập nền: luôn +10 scrap/s dù chưa có mine
+	DEATH_SCRAP_KEEP = 0.5,     -- chết -> scrap còn lại 1/2 (mất công trình/quân)
+	SCRAP_PER_LEVEL = 1000,     -- mỗi 1000 scrap tích luỹ = +1 cấp (level suy từ scrap)
+	UNIT_PRICE_STEP = 0.03,     -- giá unit +3% base cho MỖI con cùng loại đang có
+	BUILDING_PRICE_STEP = 0.35, -- giá công trình +35% base cho MỖI cái cùng loại đang có
 	MOTHERSHIP_KILL_REWARD = 1000, -- thưởng scrap khi hạ 1 Tàu Mẹ địch
 	MOTHERSHIP_KILL_GEM = 1,       -- thưởng gem khi hạ 1 Tàu Mẹ địch
 	BUILDING_KILL_REWARD = 100,    -- thưởng scrap khi phá 1 công trình địch
+
+	-- ┌─ META-PROGRESSION ③: BỀN TOÀN PHẦN + LỢI SUẤT GIẢM DẦN (rubber-band) ─┐
+	-- Scrap tích luỹ bền qua trận (người giỏi cứ giàu lên), NHƯNG income scale
+	-- ngược theo độ giàu: nghèo kiếm nhanh, giàu kiếm chậm -> chống snowball vô
+	-- hạn mà vẫn cho giữ lợi thế. Cộng bounty treo đầu kẻ dẫn đầu.
+	INCOME_WEALTH_SOFTCAP = 5000, -- mốc scrap mà income đã tụt về ~giữa MIN/MAX
+	INCOME_MULT_MAX = 2.0,        -- hệ số income khi rất NGHÈO (underdog kiếm x2)
+	INCOME_MULT_MIN = 0.35,       -- hệ số income khi rất GIÀU (đại gia kiếm chậm)
+	KILL_BOUNTY_RATE = 0.15,      -- hạ 1 Tàu Mẹ -> +15% scrap CỦA NẠN NHÂN làm thưởng
+	-- └───────────────────────────────────────────────────────────────────────┘
 	BUILD_SIZE_MULT = 1, -- hệ số nhân KÍCH CỠ nhà (kích cỡ nền đã ~2.5× Tàu Mẹ; tăng để to hơn)
 	-- HP nhà tính theo công thức: hp(tier) = hpBase * HP_TIER_MULT^(tier-1).
 	-- Config chỉ cần điền hpBase mỗi loại; nâng tier tự cộng máu theo hệ số này.

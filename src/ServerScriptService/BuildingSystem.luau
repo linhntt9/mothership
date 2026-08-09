@@ -304,7 +304,7 @@ local function onPlaceBuilding(player, buildingType, point)
 		return
 	end
 
-	local cost = tierTable(buildingType)[1].cost
+	local cost = EconomySystem.buildingCost(ownerId, buildingType, tierTable(buildingType)[1].cost)
 	local buildPos, node
 
 	if buildingType == "ScrapMine" then
@@ -470,7 +470,7 @@ function BuildingSystem.botPlace(ownerId, buildingType, point)
 	point = Util.clampToMap(point, Config.MAP.SIZE)
 	if Util.flatDist(owner.part.Position, point) > Config.ECONOMY.BUILD_RANGE then return false end
 
-	local cost = tiers[1].cost
+	local cost = EconomySystem.buildingCost(ownerId, buildingType, tiers[1].cost)
 	local buildPos, node
 	local m = Config.ECONOMY.BUILD_SIZE_MULT or 1
 

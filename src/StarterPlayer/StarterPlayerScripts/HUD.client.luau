@@ -239,6 +239,19 @@ Remotes.ScrapUpdate.OnClientEvent:Connect(function(scrap)
 	state.scrap = scrap
 	refreshButtons()
 end)
+
+-- Giá leo thang: server gửi giá hiện tại -> cập nhật nhãn + ngưỡng mua của nút.
+Remotes.PricesUpdate.OnClientEvent:Connect(function(units, builds)
+	for _, entry in ipairs(buttons) do
+		local def = entry.def
+		local cost = (def.kind == "build") and builds[def.key] or units[def.key]
+		if cost then
+			def.cost = cost
+			entry.btn.Text = ("%s\n%d ◈\n[%s]"):format(def.label, cost, def.hotkey)
+		end
+	end
+	refreshButtons()
+end)
 Remotes.FleetUpdate.OnClientEvent:Connect(function(used, max)
 	state.used, state.max = used, max
 	refreshButtons()

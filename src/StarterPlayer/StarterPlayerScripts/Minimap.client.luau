@@ -54,6 +54,11 @@ Remotes.MatchState.OnClientEvent:Connect(function(s)
 	gui.Enabled = (s == "playing")
 end)
 
+-- Sandbox Test: map nhỏ (~500) + hiện bù nhìn. Server báo qua TestState.
+local testMode = false
+local TEST_MAP = 500
+Remotes.TestState.OnClientEvent:Connect(function(b) testMode = (b == true) end)
+
 local mapFrame = Instance.new("Frame")
 mapFrame.Name = "Map"
 mapFrame.AnchorPoint = Vector2.new(1, 1)
@@ -78,7 +83,7 @@ border.Parent = mapFrame
 -- Chuyển toạ độ world (x,z) -> pixel trong khung minimap
 -------------------------------------------------------------------------------
 local function toMini(x, z)
-	local size = Config.MAP.SIZE
+	local size = testMode and TEST_MAP or Config.MAP.SIZE
 	local half = size / 2
 	local u = math.clamp((x + half) / size, 0, 1)
 	local v = math.clamp((z + half) / size, 0, 1)
@@ -229,6 +234,18 @@ local function redraw()
 			if part:IsA("BasePart") and part.Name:match("^Mothership_")
 				and part.Name ~= ("Mothership_" .. myId) then
 				placeDot(part.Position.X, part.Position.Z, 10, part.Color, nil)
+			end
+		end
+	end
+
+	-- Sandbox Test: chấm ĐỎ cho bù nhìn (part có attribute "Dummy").
+	if testMode then
+		local units = Workspace:FindFirstChild("Units")
+		if units then
+			for _, part in ipairs(units:GetChildren()) do
+				if part:IsA("BasePart") and part:GetAttribute("Dummy") then
+					placeDot(part.Position.X, part.Position.Z, 7, COL_ENEMY_BLD, nil)
+				end
 			end
 		end
 	end

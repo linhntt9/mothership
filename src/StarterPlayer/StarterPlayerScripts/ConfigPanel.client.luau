@@ -62,7 +62,7 @@ add("Spawn góc (0..1)", "MAP.SPAWN_FRAC")
 add("— HẠM ĐỘI —", nil)
 add("Base Cap", "FLEET.BASE_CAP")
 add("Orbit Spin", "FLEET.ORBIT_SPIN")
-add("Split Dist", "FLEET.SPLIT_DIST")
+add("Split Spread", "FLEET.SPLIT_SAT_SPREAD")
 add("Follow Gain", "FLEET.FOLLOW_GAIN")
 add("Inner Radius", "FLEET.INNER_RADIUS")
 add("Ring Gap", "FLEET.RING_GAP")
@@ -210,10 +210,10 @@ title.Text = "CONFIG (sửa số rồi Enter)"
 title.Parent = panel
 
 -- Hàng nút: Chơi lại | +Bot (góc) | +Bot gần (cạnh Tàu Mẹ để test ngay)
-local function rowBtn(x, w, color, text, onClick)
+local function rowBtn(x, w, color, text, onClick, y)
 	local b = Instance.new("TextButton")
 	b.Size = UDim2.new(w, -6, 0, 30)
-	b.Position = UDim2.new(x, 3, 0, 32)
+	b.Position = UDim2.new(x, 3, 0, y or 32)
 	b.BackgroundColor3 = color
 	b.TextColor3 = Color3.fromRGB(255, 255, 255)
 	b.Font = Enum.Font.GothamBold
@@ -224,9 +224,11 @@ local function rowBtn(x, w, color, text, onClick)
 	b.Activated:Connect(onClick)
 	return b
 end
-rowBtn(0, 0.30, Color3.fromRGB(180, 60, 60), "☠ Chơi lại", function() Remotes.Restart:FireServer() end)
-rowBtn(0.30, 0.20, Color3.fromRGB(60, 120, 90), "＋ Bot", function() Remotes.AddBot:FireServer() end)
-rowBtn(0.50, 0.26, Color3.fromRGB(70, 150, 110), "＋ Bot gần", function() Remotes.AddBot:FireServer(true) end)
+-- matchOnly: các nút + vùng config CHỈ dùng ở trận thật -> ẩn khi vào sandbox test.
+local matchOnly = {}
+matchOnly[1] = rowBtn(0, 0.30, Color3.fromRGB(180, 60, 60), "☠ Chơi lại", function() Remotes.Restart:FireServer() end)
+matchOnly[2] = rowBtn(0.30, 0.20, Color3.fromRGB(60, 120, 90), "＋ Bot", function() Remotes.AddBot:FireServer() end)
+matchOnly[3] = rowBtn(0.50, 0.26, Color3.fromRGB(70, 150, 110), "＋ Bot gần", function() Remotes.AddBot:FireServer(true) end)
 local botBtn
 botBtn = rowBtn(0.76, 0.24, Color3.fromRGB(70, 90, 130), "👁 Bot", function()
 	ClientBus.showBots = not ClientBus.showBots
@@ -234,11 +236,19 @@ botBtn = rowBtn(0.76, 0.24, Color3.fromRGB(70, 90, 130), "👁 Bot", function()
 	botBtn.BackgroundColor3 = ClientBus.showBots and Color3.fromRGB(80, 150, 90) or Color3.fromRGB(70, 90, 130)
 end)
 
+matchOnly[4] = botBtn
+
+-- Hàng 2: SANDBOX Test Combat (nơi riêng) + bơm quân 2 phe + thoát về sảnh.
+rowBtn(0, 0.30, Color3.fromRGB(150, 90, 60), "⚔ Test", function() Remotes.StartTest:FireServer() end, 66)
+rowBtn(0.30, 0.26, Color3.fromRGB(70, 110, 160), "＋ Tôi", function() Remotes.TestSpawn:FireServer("me") end, 66)
+rowBtn(0.56, 0.26, Color3.fromRGB(160, 80, 80), "＋ Dummy", function() Remotes.TestSpawn:FireServer("dummy") end, 66)
+rowBtn(0.82, 0.18, Color3.fromRGB(90, 90, 110), "🏠", function() Remotes.ToLobby:FireServer() end, 66)
+
 -- Tab bar (Game / Bot) — lọc field theo tab.
 local setTab            -- gán sau khi tạo rows
 local tabBtns = {}
 local tabBar = Instance.new("Frame")
-tabBar.Position = UDim2.new(0, 6, 0, 66)
+tabBar.Position = UDim2.new(0, 6, 0, 102)
 tabBar.Size = UDim2.new(1, -12, 0, 26)
 tabBar.BackgroundTransparency = 1
 tabBar.Parent = panel
@@ -262,8 +272,8 @@ for i, tname in ipairs({ "Game", "Bot", "Nhà" }) do
 end
 
 local scroll = Instance.new("ScrollingFrame")
-scroll.Size = UDim2.new(1, -12, 1, -100)
-scroll.Position = UDim2.new(0, 6, 0, 96)
+scroll.Size = UDim2.new(1, -12, 1, -136)
+scroll.Position = UDim2.new(0, 6, 0, 132)
 scroll.BackgroundTransparency = 1
 scroll.BorderSizePixel = 0
 scroll.ScrollBarThickness = 6
@@ -355,6 +365,14 @@ function setTab(t)
 	end
 end
 setTab("Game")
+
+-- Lọc UI theo SANDBOX test: ẩn nút/bảng config của trận thật, chỉ chừa hàng test.
+local function applyTestFilter(isTest)
+	for _, b in ipairs(matchOnly) do b.Visible = not isTest end
+	tabBar.Visible = not isTest
+	scroll.Visible = not isTest
+end
+Remotes.TestState.OnClientEvent:Connect(applyTestFilter)
 
 -- Đồng bộ số đã lưu từ server -> cập nhật Config client + ô hiển thị
 Remotes.ConfigSync.OnClientEvent:Connect(function(data)

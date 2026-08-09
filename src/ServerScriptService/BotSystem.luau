@@ -51,6 +51,24 @@ local BOT_COLORS = {
 	Color3.fromRGB(255, 170, 60),  -- cam
 }
 
+-- Vị trí respawn XA mọi người chơi (>=400 studs) -> bot "kéo tới" ngoài tầm nhìn,
+-- không thấy pop-in ngay trước mặt. Thử 20 lần rồi fallback ngẫu nhiên.
+local function farSpawnPos()
+	local half = Config.MAP.SIZE / 2 - 80
+	local r = Config.MOTHERSHIP.RADIUS
+	for _ = 1, 20 do
+		local pos = Vector3.new(math.random(-half, half), r, math.random(-half, half))
+		local ok = true
+		for _, e in pairs(GameState.motherships) do
+			if (not e.isBot) and e.alive and e.part and (e.part.Position - pos).Magnitude < 400 then
+				ok = false; break
+			end
+		end
+		if ok then return pos end
+	end
+	return Vector3.new(math.random(-half, half), r, math.random(-half, half))
+end
+
 -------------------------------------------------------------------------------
 -- Helpers
 -------------------------------------------------------------------------------
@@ -331,7 +349,7 @@ end
 local RAIDER_FLEET = { Drone = 6, Frigate = 3, Destroyer = 2 }
 
 function BotSystem.addBot(nearPos, raider)
-	if not MatchState.isPlaying() then return false end -- chỉ tạo bot khi đang trong trận
+	if not MatchState.isMatch() then return false end -- chỉ tạo bot trong TRẬN THẬT (không ở sandbox test)
 	local id = nextBotId()
 	local n = -id                       -- 1,2,3... dùng để đặt tên & chọn màu
 	local pos
@@ -419,24 +437,23 @@ function BotSystem.init()
 		end
 	end)
 
-	-- AUTO-RESPAWN: luôn giữ đủ Config.BOT.MAINTAIN bot sống trong sân (khi đang trận).
-	-- -> người chơi luôn có đội quân khác để đụng độ, không bao giờ "trống sân".
+	-- AUTO-RESPAWN tự nhiên: giữ ~MAINTAIN bot, nhưng bù TỪNG CON MỘT theo nhịp
+	-- NGẪU NHIÊN và spawn XA người chơi (như quân mới kéo tới) -> không "pop đủ 5"
+	-- máy móc. Số bot dao động tự nhiên quanh MAINTAIN.
 	task.spawn(function()
 		while true do
-			task.wait(3)
+			task.wait(math.random(4, 8)) -- nhịp lệch, không đều tăm tắp
 			local keep = Config.BOT.MAINTAIN or 0
-			if MatchState.isPlaying() and keep > 0 then
-				-- dọn state bot đã chết (mothership đã bị huỷ)
-				for id in pairs(botStates) do
+			if MatchState.isMatch() and keep > 0 then
+				for id in pairs(botStates) do -- dọn state bot đã chết
 					if not GameState.motherships[id] then botStates[id] = nil end
 				end
-				-- đếm bot còn sống + bù cho đủ
 				local live = 0
 				for _, e in pairs(GameState.motherships) do
 					if e.isBot and e.alive then live += 1 end
 				end
-				for _ = 1, keep - live do
-					BotSystem.addBot()
+				if live < keep then
+					BotSystem.addBot(farSpawnPos(), false) -- chỉ bù 1 con/lần, từ rìa map
 				end
 			end
 		end

@@ -30,6 +30,7 @@ local Util = require(ReplicatedStorage.Util)
 local Remotes = require(ReplicatedStorage.Remotes)
 local GameState = require(script.Parent.GameState)
 local MapSystem = require(script.Parent.MapSystem)
+local MatchState = require(script.Parent.MatchState)
 
 local FleetSystem = {}
 
@@ -59,6 +60,7 @@ local VISUAL = {
 
 -- Fleet cap tối đa của 1 owner = BASE_CAP + tổng bonus của các Drone Hub sở hữu.
 function FleetSystem.getMaxCap(ownerId)
+	if MatchState.isTest() then return 1000 end -- sandbox test: pop 1000 để xả quân
 	local cap = Config.FLEET.BASE_CAP
 	for _, b in ipairs(GameState.buildings) do
 		if b.ownerId == ownerId and b.buildingType == "DroneHub" then
@@ -178,6 +180,13 @@ function FleetSystem.spawnUnit(ownerId, unitType, ignoreCap)
 		targeting = stats.targeting or "STANDARD", -- (Bước 1-3: kiểu nhắm riêng)
 		special = stats.special,                   -- (Bước 3: GRAVITY_STUN | KAMIKAZE)
 		chargeTime = stats.chargeTime,             -- (Bước 2: telegraph nạp đạn Siege)
+		projectile = stats.projectile,             -- (Lordz) bắn đạn bay thay vì hitscan
+		projSpeed = stats.projSpeed,
+		projRadius = stats.projRadius,
+		coneAngle = stats.coneAngle,               -- (Lordz) Dragon: góc mở nón
+		volleyCount = stats.volleyCount,           -- (Lordz) Battleship: số tia mỗi cụm laser
+		melee = stats.melee,                       -- (Lordz) cận chiến: lao vào đánh áp sát
+		aggro = stats.aggro,                       -- tầm phát hiện để bắt đầu lao phun
 		-- Bước 3a — tham số CC (chỉ Titan có); pushOffset/stunnedUntil set lúc bị đánh.
 		stunRadius = stats.stunRadius,
 		stunDuration = stats.stunDuration,
@@ -192,6 +201,27 @@ function FleetSystem.spawnUnit(ownerId, unitType, ignoreCap)
 	return true
 end
 
+-- BÙ NHÌN TEST: mục tiêu TĨNH, máu cực cao (gần như bất tử), KHÔNG bắn -> để quân
+-- người chơi xả đạn thoải mái. Là "unit" phe địch (ownerId âm, không cần Tàu Mẹ) gắn
+-- cờ `dummy`: không vào đội hình, không bị separation đẩy, không bị dọn khi thiếu chủ,
+-- CombatSystem bỏ qua khi bắn.
+local DUMMY_OWNER = -999
+function FleetSystem.spawnDummy(pos)
+	local part = makeUnitPart("Destroyer", pos, Config.TEAM.ENEMY)
+	part.Size = part.Size * 2.6       -- bù nhìn TO cho dễ ngắm/xả đạn
+	part:SetAttribute("Dummy", true)  -- để minimap nhận diện & hiển thị
+	local unit = {
+		kind = "Unit", ownerId = DUMMY_OWNER, unitType = "Destroyer", ring = "GUARD",
+		part = part, radius = math.max(part.Size.X, part.Size.Z) / 2,
+		hp = 1e12, maxHp = 1e12, speed = 0, weight = 0,
+		dmg = 0, range = 0, fireRate = 1, aoe = 0,
+		attack = "HITSCAN", targeting = "STANDARD",
+		dummy = true, cooldown = 0,
+	}
+	table.insert(GameState.units, unit)
+	return unit
+end
+
 -- Dọn unit chết / mất chủ; trả về true nếu có thay đổi để cập nhật HUD.
 local function cleanupUnits()
 	local changedOwners = {}
@@ -199,7 +229,7 @@ local function cleanupUnits()
 		local u = GameState.units[i]
 		local dead = (not u.part) or (not u.part.Parent)
 		local remove = dead
-		if not dead and not u.remnant then
+		if not dead and not u.remnant and not u.dummy then
 			-- Không phải tàn quân: mất chủ (Tàu Mẹ chết/rời) -> huỷ.
 			-- (Tàu Mẹ chết đã convertToRemnants nên quân của nó thành tàn quân, giữ lại.)
 			local owner = GameState.motherships[u.ownerId]
@@ -224,6 +254,8 @@ function FleetSystem.convertToRemnants(ownerId)
 			u.ownerId = 0
 			u.remnant = true
 			u.armed = nil
+			u.engaged = nil
+			u.meleeTarget = nil
 			u.cooldown = 0
 			if u.part then
 				u.part.Color = Color3.fromRGB(155, 158, 165) -- xám = trung lập
@@ -286,7 +318,7 @@ end
 local _b1, _b2, _b3 = {}, {}, {}
 local _ordered = {}
 
-local function packRings(list, center, dt)
+local function packRings(list, center, dt, inner)
 	local n = #list
 	if n == 0 then return end
 
@@ -305,7 +337,7 @@ local function packRings(list, center, dt)
 	end
 
 	local i = 1
-	local radius = Config.FLEET.INNER_RADIUS
+	local radius = inner or Config.FLEET.INNER_RADIUS
 	local ringIndex = 0
 	while i <= n do
 		-- Scale theo cỡ unit mở đầu vòng: unit CÀNG TO -> spacing & gap càng lớn,
@@ -348,16 +380,152 @@ local function moveToward(cur, target, maxStep)
 	end
 end
 
--- Buffer tái sử dụng cho gom unit theo owner + 2 cánh Split.
+-- Buffer tái sử dụng: gom unit theo owner + tối đa 16 CỤM khi split (Lordz-style).
 local _ownerList = {}
-local _wingL, _wingR = {}, {}
+local _clusters = {}
+for _i = 1, 16 do _clusters[_i] = {} end
+local TWO_PI = 2 * math.pi
 
 -- Cập nhật vị trí toàn bộ unit theo quỹ đạo (gọi mỗi Heartbeat).
+-- SPLIT Lordz: hạm đội chia C=2^level cụm. Cụm VUA bám ngay Tàu Mẹ (lõi phòng thủ),
+-- C-1 cụm vệ tinh toả TRƯỚC MẶT theo hướng đi. Mỗi cụm 1 sub-leader anchor, unit
+-- packRings quanh anchor. Hết giờ -> tự gộp dần, mọi cụm hút về toạ độ Vua.
+-- Lane vệ tinh k (0..sat-1) -> [-1, 1] (rải đối xứng quanh trục con trỏ).
+local function laneOffset(k, sat)
+	if sat <= 1 then return 0 end
+	return (k / (sat - 1) - 0.5) * 2
+end
+
+-- Tốc độ TB của 1 cụm (cụm toàn quân nhanh -> anchor phóng nhanh -> slingshot rõ).
+local function avgSpeed(buf)
+	local n = #buf
+	if n == 0 then return 0 end
+	local s = 0
+	for _, u in ipairs(buf) do s += (u.speed or 30) end
+	return s / n
+end
+
+-- MÔ PHỎNG VỆ TINH (multi-vector attraction to cursor). Mỗi cụm vệ tinh = 1 anchor
+-- ĐỘNG (pos+vel) tự chase con trỏ (owner.aimPoint):
+--   - funnel  : gần con trỏ thì lane co về 0 -> các cụm chụm vào 1 điểm.
+--   - slingshot: bám bằng quán tính -> cụm nhanh vọt qua con trỏ rồi lượn vòng.
+--   - deflection: 2 anchor quá sát -> đẩy góc để chạy song song, không dính nhau.
+-- Khi GỘP (owner.rejoining): mọi anchor hút thẳng về Vua (center) -> re-center.
+-- Dùng buffer _clusters đã được updateFormation nạp: cụm vệ tinh j dùng _clusters[j+1].
+local function stepSatellites(owner, center, C, dt)
+	local F = Config.FLEET
+	local sat = C - 1
+	local st = owner.satState or {}
+	owner.satState = st
+
+	-- Điểm "master": con trỏ thô; khi gộp -> Vua; thiếu con trỏ -> trước mặt Tàu Mẹ.
+	local masterPt
+	if owner.rejoining then
+		masterPt = center
+	elseif owner.aimPoint then
+		masterPt = owner.aimPoint
+	else
+		local f = owner.facing or Vector3.new(1, 0, 0)
+		masterPt = center + Vector3.new(f.X, 0, f.Z) * 120
+	end
+	local md = Vector3.new(masterPt.X - center.X, 0, masterPt.Z - center.Z)
+	if md.Magnitude < 1e-3 then
+		local f = owner.facing or Vector3.new(1, 0, 0)
+		md = Vector3.new(f.X, 0, f.Z)
+		md = (md.Magnitude > 1e-3) and md.Unit or Vector3.new(1, 0, 0)
+	else
+		md = md.Unit
+	end
+	local perp = Vector3.new(-md.Z, 0, md.X)
+
+	local spread   = F.SPLIT_SAT_SPREAD or 40
+	local funnel   = F.SPLIT_SAT_FUNNEL or 120
+	local accelK   = F.SPLIT_SAT_ACCEL or 9
+	local speedMul = F.SPLIT_SAT_SPEED_MULT or 1.3
+	local minGap   = F.SPLIT_SAT_MINGAP or 28
+	local repel    = F.SPLIT_SAT_REPEL or 80
+	local burst    = F.SPLIT_SAT_BURST or 100
+	local maxRange = F.SPLIT_SAT_MAX_RANGE or 280
+	local baseSpeed = Config.MOTHERSHIP.SPEED or 70
+
+	-- Cụm mới tách ra -> bung từ Vua với xung tốc dọc lane (split launch).
+	for j = 1, sat do
+		if not st[j] then
+			local lane = laneOffset(j - 1, sat)
+			local dir = md + perp * (lane * 0.8)
+			dir = (dir.Magnitude > 1e-3) and dir.Unit or md
+			st[j] = { pos = center, vx = dir.X * burst, vz = dir.Z * burst }
+		end
+	end
+	for j = sat + 1, 16 do st[j] = nil end
+
+	-- PASS 1: tính vận tốc mới (đọc vị trí HIỆN TẠI của mọi anchor -> đối xứng).
+	for j = 1, sat do
+		local a = st[j]
+		local target
+		if owner.rejoining then
+			target = center
+		else
+			local dAim = (masterPt - a.pos).Magnitude
+			local spreadMag = spread * math.clamp(dAim / funnel, 0, 1) -- funnel: gần -> 0
+			target = masterPt + perp * (laneOffset(j - 1, sat) * spreadMag)
+		end
+		-- kẹp đích trong tầm quanh Vua
+		local offx, offz = target.X - center.X, target.Z - center.Z
+		local offm = math.sqrt(offx * offx + offz * offz)
+		if offm > maxRange then
+			target = Vector3.new(center.X + offx / offm * maxRange, center.Y, center.Z + offz / offm * maxRange)
+		end
+
+		local maxSpeed = math.max(avgSpeed(_clusters[j + 1]), baseSpeed) * speedMul
+		local tx, tz = target.X - a.pos.X, target.Z - a.pos.Z
+		local tm = math.sqrt(tx * tx + tz * tz)
+		local desx, desz = 0, 0
+		if tm > 1e-3 then desx, desz = tx / tm * maxSpeed, tz / tm * maxSpeed end
+		local k = math.min(accelK * dt, 1)
+		local vx = a.vx + (desx - a.vx) * k
+		local vz = a.vz + (desz - a.vz) * k
+
+		-- angular deflection: đẩy khỏi anchor khác quá sát
+		for o = 1, sat do
+			if o ~= j then
+				local b = st[o]
+				local dx, dz = a.pos.X - b.pos.X, a.pos.Z - b.pos.Z
+				local m = math.sqrt(dx * dx + dz * dz)
+				if m > 1e-3 and m < minGap then
+					local push = repel * (1 - m / minGap) * dt
+					vx += dx / m * push
+					vz += dz / m * push
+				end
+			end
+		end
+		-- kẹp tốc độ
+		local sp = math.sqrt(vx * vx + vz * vz)
+		if sp > maxSpeed and sp > 1e-3 then
+			vx, vz = vx / sp * maxSpeed, vz / sp * maxSpeed
+		end
+		a._nx, a._nz = vx, vz
+	end
+
+	-- PASS 2: tích hợp vị trí + xếp đội hình cụm quanh anchor.
+	for j = 1, sat do
+		local a = st[j]
+		a.vx, a.vz = a._nx or 0, a._nz or 0
+		a.pos = Vector3.new(a.pos.X + a.vx * dt, center.Y, a.pos.Z + a.vz * dt)
+		local buf = _clusters[j + 1]
+		if #buf > 0 then
+			packRings(buf, a.pos, dt, 2) -- lõi nhỏ -> cụm vệ tinh ĐẶC, không lỗ giữa
+		end
+	end
+end
+
 local function updateFormation(dt)
 	-- Góc quay chung, chậm -> cả hạm đội "sống"
 	globalTheta = (globalTheta + Config.FLEET.ORBIT_SPIN * dt) % (2 * math.pi)
 
-	local rampRate = Config.FLEET.SPLIT_DIST / Config.FLEET.SPLIT_RAMP -- studs/s
+	local F = Config.FLEET
+	local maxLevel = F.SPLIT_MAX_LEVEL or 4
+	local now = os.clock()
 
 	-- Duyệt theo TỪNG owner, gom unit của owner vào buffer dùng lại (không cấp phát
 	-- bảng groups mỗi frame). Bỏ qua Kamikaze đã kích hoạt (u.armed): CombatSystem tự lái.
@@ -365,38 +533,67 @@ local function updateFormation(dt)
 		if owner.alive and owner.part then
 			table.clear(_ownerList)
 			for _, u in ipairs(GameState.units) do
-				if u.ownerId == ownerId and not u.armed then
-					table.insert(_ownerList, u)
+				if u.ownerId == ownerId and not u.armed and not u.engaged then
+					table.insert(_ownerList, u) -- đang lao cận chiến (engaged) -> CombatSystem tự lái
 				end
 			end
 
 			if #_ownerList > 0 then
 				local center = owner.part.Position
-				local wantDist = owner.split and Config.FLEET.SPLIT_DIST or 0
-				owner.splitDist = moveToward(owner.splitDist, wantDist, rampRate * dt)
 
-				if owner.splitDist <= 0.1 then
+				-- Máy trạng thái GỘP: quá SPLIT_REJOIN_DELAY không bấm -> vào chế độ gộp;
+				-- gộp thì hạ 1 bậc mỗi SPLIT_REJOIN_STEP (16→8→…→1), vệ tinh hút về Vua.
+				local level = owner.splitLevel or 0
+				if level > 0 then
+					if not owner.rejoining and now >= (owner.rejoinAt or 0) then
+						owner.rejoining = true
+						owner.rejoinNext = now
+					end
+					if owner.rejoining and now >= (owner.rejoinNext or 0) then
+						level -= 1
+						owner.splitLevel = level
+						owner.rejoinNext = now + (F.SPLIT_REJOIN_STEP or 0.6)
+					end
+				end
+				level = math.clamp(level, 0, maxLevel)
+
+				local C = 2 ^ level -- 1,2,4,8,16
+				if C <= 1 then
+					-- 1 cụm: đội hình quanh Tàu Mẹ; xoá state vệ tinh -> split sau bung lại từ đầu.
+					owner.satState = nil
 					packRings(_ownerList, center, dt)
 				else
-					local right = Util.rotateRight90(owner.facing)
-					table.clear(_wingL); table.clear(_wingR)
-					for i, u in ipairs(_ownerList) do
-						if i % 2 == 1 then table.insert(_wingL, u) else table.insert(_wingR, u) end
+					-- Chia round-robin: cụm 1 = VUA (bám Tàu Mẹ), cụm 2..C = vệ tinh CHASE con trỏ.
+					for j = 1, C do table.clear(_clusters[j]) end
+					for idx, u in ipairs(_ownerList) do
+						table.insert(_clusters[((idx - 1) % C) + 1], u)
 					end
-					packRings(_wingL, center - right * owner.splitDist, dt)
-					packRings(_wingR, center + right * owner.splitDist, dt)
+					if #_clusters[1] > 0 then
+						packRings(_clusters[1], center, dt, 10) -- cụm Vua ôm sát Tàu Mẹ (ít hở)
+					end
+					stepSatellites(owner, center, C, dt) -- mô phỏng anchor động cho vệ tinh
 				end
 			end
 		end
 	end
 end
 
--- Nhận cờ Split từ client (giữ/thả Space). Server là nơi quyết định.
-local function onSplitInput(player, flag)
+-- Nhận tín hiệu Split từ client: MỖI lần bấm Space = phân hạch +1 bậc (nhân đôi số
+-- cụm). Server quyết định cấp + hẹn giờ tự gộp. Bấm liên tục -> giữ trạng thái tách.
+local function onSplitInput(player)
 	local owner = GameState.motherships[player.UserId]
-	if owner then
-		owner.split = (flag == true)
-	end
+	if not owner then return end
+	local maxLevel = Config.FLEET.SPLIT_MAX_LEVEL or 4
+	owner.splitLevel = math.min((owner.splitLevel or 0) + 1, maxLevel)
+	owner.rejoinAt = os.clock() + (Config.FLEET.SPLIT_REJOIN_DELAY or 3)
+	owner.rejoining = false -- bấm split lại -> huỷ chế độ gộp, chase con trỏ tiếp
+end
+
+-- Con trỏ THÔ từ client (không kẹp leash) -> điểm master cho vệ tinh split chase.
+local function onAimInput(player, pt)
+	if typeof(pt) ~= "Vector3" then return end
+	local owner = GameState.motherships[player.UserId]
+	if owner then owner.aimPoint = pt end
 end
 
 -- Đẩy tách các unit đè lên nhau (kể cả khác phe khi chạm trán) để không overlap.
@@ -412,7 +609,7 @@ local function separationPass()
 	local grid = {}
 	for _, u in ipairs(units) do
 		local part = u.part
-		if part and part.Parent and not u.armed then -- Kamikaze đang lao: không xô đẩy
+		if part and part.Parent and not u.armed and not u.dummy and not u.engaged then -- lao/bù nhìn: không xô đẩy
 			local p = part.Position
 			local kx = math.floor(p.X / SEP_CELL)
 			local kz = math.floor(p.Z / SEP_CELL)
@@ -459,7 +656,8 @@ local function separationPass()
 	-- Áp lực đẩy (kẹp để không giật). Tàn quân KHÔNG bị đẩy (đứng im chờ được chiếm).
 	for _, u in ipairs(units) do
 		local part = u.part
-		if part and part.Parent and not u.armed and not u.remnant and (u._sx ~= 0 or u._sz ~= 0) then
+		if part and part.Parent and not u.armed and not u.remnant and not u.dummy and not u.engaged
+			and u._sx and (u._sx ~= 0 or u._sz ~= 0) then
 			local mag = math.sqrt(u._sx * u._sx + u._sz * u._sz)
 			if mag > maxPush then
 				u._sx = u._sx / mag * maxPush
@@ -511,6 +709,7 @@ function FleetSystem.init()
 
 	-- Mua unit (SpawnUnit) do EconomySystem xử lý (có trừ scrap).
 	Remotes.SplitInput.OnServerEvent:Connect(onSplitInput)
+	Remotes.AimInput.OnServerEvent:Connect(onAimInput)
 
 	RunService.Heartbeat:Connect(function(dt)
 		cleanupUnits()

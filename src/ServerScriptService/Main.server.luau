@@ -117,13 +117,17 @@ local function broadcastState()
 	Remotes.MatchState:FireAllClients(MatchState.isPlaying() and "playing" or "lobby")
 end
 
+local testGround -- nền phẳng của sandbox Test Combat (nơi RIÊNG, không phải arena)
+
 -- Dọn sạch mọi entity trận (dùng khi về lobby hoặc trước khi dựng trận mới).
 local function clearMatch()
 	FleetSystem.clearAll()
+	CombatSystem.clearProjectiles() -- dọn đạn bay còn lại
 	BuildingSystem.clearAll()   -- dọn building trước để giải phóng node mỏ
 	MothershipSystem.clearAll()
 	BotSystem.clearAll()
 	PickupSystem.clearAll()
+	if testGround then testGround:Destroy(); testGround = nil end -- dọn nền sandbox
 end
 
 local function lobbyShipPos()
@@ -147,6 +151,7 @@ local function startMatch()
 	MothershipSystem.respawnPlayers()
 	BotSystem.reset()               -- spawn bot
 	broadcastState()
+	Remotes.TestState:FireAllClients(false)
 	print("[Main] Vào trận.")
 end
 
@@ -158,12 +163,69 @@ local function enterLobby()
 	MatchState.set("LOBBY")
 	spawnLobbyShips()
 	broadcastState()
+	Remotes.TestState:FireAllClients(false)
 	print("[Main] Vào lobby.")
+end
+
+-- ── SANDBOX TEST COMBAT (nơi RIÊNG, không chung arena) ───────────────────────
+-- Nền phẳng riêng + Tàu Mẹ người chơi 1 bên + "địch bù nhìn" (mothership tĩnh, id
+-- âm, KHÔNG có AI) bên kia. Không bot/kinh tế/scrap/thắng-thua. Dev bơm quân free
+-- cho 2 phe rồi lái vào xem combat.
+local function startTest()
+	clearMatch()
+	LobbySystem.clearHall()
+	MapSystem.clearAll()            -- gỡ arena nếu có (test KHÔNG dùng map thật)
+	MatchState.set("TEST")
+
+	testGround = Instance.new("Part")
+	testGround.Name = "TestGround"
+	testGround.Anchored = true
+	testGround.CanCollide = false
+	testGround.Size = Vector3.new(520, 2, 520)
+	testGround.Position = Vector3.new(0, -1, 0)
+	testGround.Color = Color3.fromRGB(38, 42, 52)
+	testGround.Material = Enum.Material.SmoothPlastic
+	testGround.Parent = workspace
+
+	local R = Config.MOTHERSHIP.RADIUS
+	for _, p in ipairs(Players:GetPlayers()) do -- người chơi 1 bên
+		MothershipSystem.spawn(p.UserId, false, Vector3.new(0, R, -90), Config.TEAM.PLAYER)
+		EconomySystem.setScrap(p.UserId, 1000000) -- test: 1M scrap để mua thoải mái
+	end
+	-- Nhiều BÙ NHÌN tĩnh (bất tử, KHÔNG bắn) rải phía trước -> quân xả đạn thoải mái.
+	for i = 1, 16 do
+		local col = (i - 1) % 4
+		local rowi = math.floor((i - 1) / 4)
+		FleetSystem.spawnDummy(Vector3.new((col - 1.5) * 30, R, 70 + rowi * 26))
+	end
+
+	broadcastState()
+	Remotes.TestState:FireAllClients(true) -- client lọc UI/minimap theo sandbox
+	print("[Main] Vào SANDBOX Test Combat.")
+end
+
+-- Bơm test: side "dummy" = thêm bù nhìn để bắn; còn lại = quân của người bấm (free).
+local function onTestSpawn(player, side)
+	if not MatchState.isTest() then return end
+	local R = Config.MOTHERSHIP.RADIUS
+	if side == "dummy" then
+		for _ = 1, 8 do
+			FleetSystem.spawnDummy(Vector3.new((math.random() - 0.5) * 170, R, 60 + math.random() * 130))
+		end
+		return
+	end
+	for name in pairs(Config.UNITS) do
+		for _ = 1, 3 do
+			FleetSystem.spawnUnit(player.UserId, name, true) -- ignoreCap
+		end
+	end
 end
 
 Remotes.StartMatch.OnServerEvent:Connect(startMatch) -- bấm cổng "Vào trận" ở sảnh
 Remotes.Restart.OnServerEvent:Connect(startMatch)    -- "Chơi lại" ở bảng kết thúc
 Remotes.ToLobby.OnServerEvent:Connect(enterLobby)    -- "Lobby" ở bảng kết thúc
+Remotes.StartTest.OnServerEvent:Connect(startTest)   -- (dev) vào sandbox Test Combat
+Remotes.TestSpawn.OnServerEvent:Connect(onTestSpawn) -- (dev) bơm quân test
 
 -- Người vào server: khởi tạo sở hữu Tàu Mẹ (mở sẵn con mặc định) + gửi trạng thái.
 Players.PlayerAdded:Connect(function(player)

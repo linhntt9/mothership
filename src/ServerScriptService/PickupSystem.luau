@@ -215,7 +215,7 @@ function PickupSystem.init()
 	task.spawn(function()
 		while true do
 			task.wait(Config.PICKUP.RESPAWN_INTERVAL)
-			if MatchState.isPlaying() then
+			if MatchState.isMatch() then -- sandbox test: không rải scrap
 				local need = targetOrbs() - #GameState.pickups
 				for _ = 1, math.min(need, Config.PICKUP.RESPAWN_BATCH) do
 					spawnRandomOrb()

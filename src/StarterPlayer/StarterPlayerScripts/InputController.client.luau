@@ -7,7 +7,8 @@
 	            gửi MoveInput ~10Hz -> server steer Tàu Mẹ.
 	M1  Mua   : phím 1-4 = mua Drone/Frigate/Destroyer/Plasma (giờ tốn scrap).
 	M2  Debug : phím E = gọi hạm đội địch.
-	M3  Split : giữ Space = tách, thả = gộp.
+	M3  Split : bấm Space = phân hạch (Lordz) — mỗi lần nhân đôi số cụm (tối đa 16),
+	            các cụm toả vòng quanh Tàu Mẹ; ngừng bấm vài giây thì tự gộp lại.
 	M4  Build : hotbar (HUD) -> ClientBus báo vào chế độ đặt building; ghost theo
 	            chuột; chuột trái = đặt / (ngoài build) nâng cấp building đang trỏ;
 	            chuột phải = thoát build / huỷ channel.
@@ -126,6 +127,59 @@ end
 -------------------------------------------------------------------------------
 -- Input
 -------------------------------------------------------------------------------
+-- Raycast tìm ĐỐI TƯỢNG địch (Tàu Mẹ / quân / công trình) dưới con trỏ -> focus-fire.
+local function enemyPartUnderCursor(screenPos)
+	-- Ưu tiên TÀU MẸ địch: nếu con trỏ ở gần thân 1 Tàu Mẹ (không phải của mình) thì
+	-- chọn nó ngay — kể cả khi fleet địch vây quanh (raycast dễ trúng quân che trước).
+	local pt = cursorWorldPoint(screenPos)
+	local mf = Workspace:FindFirstChild("Motherships")
+	if pt and mf then
+		local best, bestD
+		for _, p in ipairs(mf:GetChildren()) do
+			if p:IsA("BasePart") and p.Name ~= ("Mothership_" .. player.UserId) then
+				local dx, dz = p.Position.X - pt.X, p.Position.Z - pt.Z
+				local d = math.sqrt(dx * dx + dz * dz)
+				local pickR = math.max(p.Size.X, p.Size.Z) / 2 + 8 -- bán kính chọn (lề 8 studs)
+				if d <= pickR and (not bestD or d < bestD) then best, bestD = p, d end
+			end
+		end
+		if best then return best end
+	end
+	local cam = Workspace.CurrentCamera
+	if not cam then return nil end
+	local folders = {}
+	for _, name in ipairs({ "Motherships", "Units", "Buildings" }) do
+		local f = Workspace:FindFirstChild(name)
+		if f then folders[#folders + 1] = f end
+	end
+	if #folders == 0 then return nil end
+	local mp = screenPos or UserInputService:GetMouseLocation()
+	local ray = cam:ScreenPointToRay(mp.X, mp.Y)
+	local params = RaycastParams.new()
+	params.FilterType = Enum.RaycastFilterType.Include
+	params.FilterDescendantsInstances = folders
+	local result = Workspace:Raycast(ray.Origin, ray.Direction * 3000, params)
+	return result and result.Instance or nil
+end
+
+-- Viền đỏ đánh dấu mục tiêu focus-fire đang chọn (thuần client).
+local focusHL = Instance.new("Highlight")
+focusHL.Name = "FocusTarget"
+focusHL.FillTransparency = 0.75
+focusHL.FillColor = Color3.fromRGB(255, 70, 70)
+focusHL.OutlineColor = Color3.fromRGB(255, 40, 40)
+focusHL.DepthMode = Enum.HighlightDepthMode.Occluded
+focusHL.Enabled = false
+focusHL.Parent = Workspace
+
+-- Đặt/bỏ focus-fire: báo server + cập nhật viền. Bỏ qua nếu trỏ trúng Tàu Mẹ của MÌNH.
+local function setFocus(part)
+	if part and part.Name == ("Mothership_" .. player.UserId) then part = nil end
+	Remotes.SetAttackTarget:FireServer(part) -- server tự lọc địch/bạn; nil = bỏ focus
+	focusHL.Adornee = part
+	focusHL.Enabled = part ~= nil
+end
+
 UserInputService.InputBegan:Connect(function(input, gameProcessed)
 	if gameProcessed then return end
 	if not playing then return end -- ở lobby: bỏ qua mua/xây/split (chỉ lái tàu)
@@ -141,7 +195,8 @@ UserInputService.InputBegan:Connect(function(input, gameProcessed)
 			if bpart and bpart:GetAttribute("OwnerUserId") == player.UserId then
 				ClientBus.selectBuilding:Fire(bpart) -- nhà MÌNH -> panel Nâng cấp/Bán
 			else
-				-- Nhà ĐỊCH / đất trống -> đóng panel; tấn công = lái Tàu Mẹ tới (trỏ chuột).
+				-- Click ĐỐI TƯỢNG địch -> focus-fire CẢ fleet; click nền trống -> bỏ focus.
+					setFocus(enemyPartUnderCursor())
 				ClientBus.selectBuilding:Fire(nil)
 			end
 		end
@@ -168,15 +223,9 @@ UserInputService.InputBegan:Connect(function(input, gameProcessed)
 	elseif input.KeyCode == Enum.KeyCode.Y then
 		enterBuildMode("PlasmaSat")                             -- Y: Plasma Satellite
 	elseif input.KeyCode == Enum.KeyCode.Space then
-		Remotes.SplitInput:FireServer(true)
+		Remotes.SplitInput:FireServer() -- Space = phân hạch +1 bậc (Lordz), tự gộp sau vài giây
 	elseif input.KeyCode == Enum.KeyCode.Escape then
 		if buildMode then exitBuildMode() end
-	end
-end)
-
-UserInputService.InputEnded:Connect(function(input)
-	if input.KeyCode == Enum.KeyCode.Space then
-		Remotes.SplitInput:FireServer(false)
 	end
 end)
 
@@ -359,7 +408,8 @@ RunService.RenderStepped:Connect(function(dt)
 				-- Leash: kẹp đích cách Tàu Mẹ tối đa MOVE_LEASH (trỏ chuột kéo trong 1 khoảng).
 				if ship then
 					local sp = ship.Position
-					local flat = Vector3.new(point.X - sp.X, 0, point.Z - sp.Z)
+					Remotes.AimInput:FireServer(point) -- con trỏ THÔ (trước leash) -> vệ tinh split chase
+						local flat = Vector3.new(point.X - sp.X, 0, point.Z - sp.Z)
 					local leash = Config.MOTHERSHIP.MOVE_LEASH or 1e9
 					if flat.Magnitude > leash then
 						point = sp + flat.Unit * leash

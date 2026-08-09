@@ -28,10 +28,14 @@ local EVENT_NAMES = {
 	"FireLaser",   -- (M2) server -> client: vẽ tia laser (origin, target, color)
 	"SiegeCharge", -- server -> client: telegraph nạp đạn Siege (origin, target, color, duration)
 	"Shockwave",   -- server -> client: VFX sóng xung Titan (center, radius, color)
+	"ConeBlast",   -- server -> client: VFX nón lửa Dragon (origin, dir, range, angle, color)
+	"ProjectileVFX", -- server -> client: VFX 1 viên đạn bay (origin, dir, speed, range, radius, color)
 	"GameOver",    -- (M2) server -> client: kết thúc ván ("victory" | "defeat")
 	"DebugEnemy",  -- (M2) client -> server: spawn 1 hạm đội địch dummy để test combat
 	"Restart",     -- (M2) client -> server: reset ván chơi
-	"SplitInput",  -- (M3) client -> server: giữ Space (true) / thả (false) để tách hạm đội
+	"SplitInput",  -- (M3) client -> server: bấm Space = phân hạch +1 bậc (Lordz)
+	"AimInput",    -- client -> server: con trỏ THÔ (không kẹp leash) -> vệ tinh split chase
+	"SetAttackTarget", -- client -> server: click 1 đối tượng địch -> CẢ fleet focus-fire (nil = bỏ)
 	-- M4 — Economy & Buildings
 	"ScrapUpdate",     -- server -> client: số scrap hiện tại
 	"PlaceBuilding",   -- client -> server: đặt building (type, world point)
@@ -47,11 +51,16 @@ local EVENT_NAMES = {
 	-- Vòng đời trận (Lobby)
 	"StartMatch",      -- client -> server: bấm Play ở lobby -> vào trận
 	"ToLobby",         -- client -> server: về lại lobby (từ bảng kết thúc)
+	"StartTest",       -- (dev) client -> server: vào SANDBOX Test Combat (nơi riêng)
+	"TestSpawn",       -- (dev) client -> server: spawn quân test miễn phí (side: "me"|"dummy")
+	"TestState",       -- server -> client: đang ở sandbox Test Combat? (bool) -> lọc UI/minimap
 	"MatchState",      -- server -> client: "lobby" | "playing" (đổi màn)
 	"SelectHero",      -- (Heroes) client -> server: chọn hero (heroId) -> buff nhóm quân
 	"HeroState",       -- (Heroes) server -> client: hero đang chọn (heroId | nil)
 	"OpenChest",       -- (Chest) client -> server: mở rương; server roll + reply (ok, reward, gems, cd)
 	"GemUpdate",       -- server -> client: số gem hiện tại
+	"LevelUpdate",     -- server -> client: cấp người chơi (thắng +1, thua -1)
+	"PricesUpdate",    -- server -> client: giá hiện tại (leo thang) của unit & công trình
 	"BuildingAlert",   -- server -> client: công trình của mình bị đánh (vị trí) -> minimap báo động
 }
 

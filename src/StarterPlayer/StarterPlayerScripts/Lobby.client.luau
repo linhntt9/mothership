@@ -141,6 +141,7 @@ local leftBar = sideBar("left")
 sideButton(leftBar, 1, "🛒", "Store", false)
 sideButton(leftBar, 2, "🚀", "My Ship", false, function() ClientBus.openIndex:Fire("MYSHIP") end)
 sideButton(leftBar, 3, "📖", "Index", false, function() ClientBus.openIndex:Fire("Quân") end)
+sideButton(leftBar, 4, "⚔", "Test", false, function() Remotes.StartTest:FireServer() end)
 
 local rightBar = sideBar("right")
 sideButton(rightBar, 1, "🎁", "Gifts", true)
@@ -172,6 +173,10 @@ local xpFill = Instance.new("Frame")
 xpFill.Size = UDim2.new(0.15, 0, 1, 0); xpFill.BackgroundColor3 = Color3.fromRGB(120, 200, 255)
 local xfc = Instance.new("UICorner"); xfc.CornerRadius = UDim.new(1, 0); xfc.Parent = xpFill
 xpFill.Parent = xpBg
+-- Cấp người chơi (thắng +1 / thua -1) — server gửi qua LevelUpdate.
+Remotes.LevelUpdate.OnClientEvent:Connect(function(lv)
+	lvlText.Text = "⭐ Lv" .. tostring(lv)
+end)
 
 -------------------------------------------------------------------------------
 -- TRÊN-PHẢI: Leaderboard (placeholder) + Gems

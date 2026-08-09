@@ -19,6 +19,7 @@
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Workspace = game:GetService("Workspace")
 
 local Config = require(ReplicatedStorage.Config)
 local Util = require(ReplicatedStorage.Util)
@@ -81,12 +82,18 @@ local function killMothership(ent)
 	local killer = ent.lastAttackerId and GameState.motherships[ent.lastAttackerId]
 	if killer then
 		if killer.stats then killer.stats.mothershipsKilled += 1 end
-		EconomySystem.add(ent.lastAttackerId, Config.ECONOMY.MOTHERSHIP_KILL_REWARD)
+		-- ③ BOUNTY: cộng thêm % scrap CỦA NẠN NHÂN (đọc TRƯỚC khi onDeath cắt 1/2)
+		-- -> hạ kẻ giàu/dẫn đầu càng lời -> underdog có động lực gỡ điểm.
+		local bounty = math.floor(EconomySystem.getScrap(ownerId) * (Config.ECONOMY.KILL_BOUNTY_RATE or 0))
+		EconomySystem.add(ent.lastAttackerId, Config.ECONOMY.MOTHERSHIP_KILL_REWARD + bounty)
 		EconomySystem.addGem(ent.lastAttackerId, Config.ECONOMY.MOTHERSHIP_KILL_GEM) -- +gem
+		-- (thưởng scrap -> level tự lên vì level suy từ tổng scrap.)
 	end
 
 	if ent.part then ent.part:Destroy() end
 	GameState.motherships[ownerId] = nil
+	-- Chết: scrap tụt còn 1/2 + tụt 1 cấp (scrap lưu bền theo owner).
+	EconomySystem.onDeath(ownerId)
 	-- Công trình của owner này biến mất theo Tàu Mẹ.
 	BuildingSystem.destroyOwnerBuildings(ownerId)
 	-- Quân còn lại KHÔNG bị huỷ: biến thành TÀN QUÂN đứng im, ai chạm vào thì chiếm.
@@ -275,11 +282,36 @@ local function nearestEnemyUnits(u, n)
 	return out
 end
 
+-- FOCUS-FIRE: mục tiêu do người chơi CLICK (owner.attackTarget). Trả về nó nếu còn
+-- hợp lệ + hợp LOẠI mà unit này bắn được + trong tầm (Tàu Mẹ địch phải không bị fleet
+-- của nó chắn). Không thoả -> nil (unit rơi về nhắm gần nhất -> vẫn tự vệ được).
+local function focusTarget(u)
+	local ownerEnt = GameState.motherships[u.ownerId]
+	local ft = ownerEnt and ownerEnt.attackTarget
+	if not ft then return nil end
+	-- còn tồn tại + là địch?
+	local ok = ft.part and ft.part.Parent and ft.ownerId ~= u.ownerId
+	if ok and ft.kind == "Mothership" then ok = ft.alive end
+	if not ok then ownerEnt.attackTarget = nil; return nil end -- mục tiêu chết/mất -> xoá
+	-- unit này có bắn được LOẠI đó không? (Siege chỉ building; tháp chỉ unit)
+	if u.targeting == "BUILDING_ONLY" and ft.kind ~= "Building" then return nil end
+	if u.targeting == "UNITS_ONLY" and ft.kind ~= "Unit" then return nil end
+	-- trong tầm?
+	if (ft.part.Position - u.part.Position).Magnitude > u.range then return nil end
+	-- Tàu Mẹ vẫn được "chắn thân" bảo vệ: còn fleet che thì chưa bắn xuyên được.
+	if ft.kind == "Mothership" and shotBlockedByFleet(u.part.Position, ft) then return nil end
+	return ft
+end
+
 -- Tìm mục tiêu tốt nhất cho 1 unit theo ưu tiên + gần nhất trong tầm.
 local function findTarget(u)
 	local pos = u.part.Position
 	local myOwner = u.ownerId
 	local range = u.range
+
+	-- Ưu tiên TUYỆT ĐỐI: mục tiêu người chơi tự click (focus-fire cả fleet).
+	local focus = focusTarget(u)
+	if focus then return focus end
 
 	-- UNITS_ONLY (tháp phòng thủ): ưu tiên enemy Unit gần nhất; không có thì bắn
 	-- Tàu Mẹ địch đang áp sát base (nếu không bị fleet của nó chắn). KHÔNG bắn building.
@@ -369,11 +401,110 @@ local function applyAoe(centerPos, radius, attackerOwner, dmg, primary)
 	end
 end
 
+-------------------------------------------------------------------------------
+-- ĐẠN BAY (Lordz): xạ thủ (Archer/Mage) bắn projectile bay THẲNG theo hướng chốt
+-- lúc bắn, trúng ĐỊCH ĐẦU TIÊN trên đường -> quân đứng trước ĐỠ ĐẠN cho tuyến sau
+-- (mở rộng body-block ra mọi hướng). Đạn có aoe (Mage) -> nổ lan tại điểm trúng.
+-------------------------------------------------------------------------------
+local projectiles = {} -- logic thuần (KHÔNG Part) -> nhẹ mạng; VFX do client tự vẽ
+local PROJ_MS_RADIUS = (Config.MOTHERSHIP.RADIUS or 6) * 1.4
+local PROJ_BUILDING_RADIUS = 12
+
+local function flatUnitDir(from, to)
+	local d = Vector3.new(to.X - from.X, 0, to.Z - from.Z)
+	if d.Magnitude < 1e-3 then return nil end
+	return d.Unit
+end
+
+-- Địch ĐẦU TIÊN chạm đạn quanh `pos` (unit qua lưới + Mothership + Building). nil nếu trống.
+local function firstEnemyHit(pr, pos)
+	local best, bestD
+	local cx = math.floor(pos.X / GRID_CELL)
+	local cz = math.floor(pos.Z / GRID_CELL)
+	for gx = cx - 1, cx + 1 do
+		local col = unitGrid[gx]
+		if col then
+			for gz = cz - 1, cz + 1 do
+				local cell = col[gz]
+				if cell then
+					for _, u in ipairs(cell) do
+						if u.ownerId ~= pr.ownerId then
+							local d = (u.part.Position - pos).Magnitude
+							if d <= pr.radius + (u.radius or 2) and (not bestD or d < bestD) then best, bestD = u, d end
+						end
+					end
+				end
+			end
+		end
+	end
+	for _, e in pairs(GameState.motherships) do
+		if e.ownerId ~= pr.ownerId and e.alive and e.part then
+			local d = (e.part.Position - pos).Magnitude
+			if d <= pr.radius + PROJ_MS_RADIUS and (not bestD or d < bestD) then best, bestD = e, d end
+		end
+	end
+	for _, b in ipairs(GameState.buildings) do
+		if b.ownerId ~= pr.ownerId and b.part and b.part.Parent then
+			local d = (b.part.Position - pos).Magnitude
+			if d <= pr.radius + PROJ_BUILDING_RADIUS and (not bestD or d < bestD) then best, bestD = b, d end
+		end
+	end
+	return best
+end
+
+local function spawnProjectile(attacker, target)
+	local origin = attacker.part.Position
+	local dir = flatUnitDir(origin, target.part.Position)
+	if not dir then return end
+	local owner = GameState.motherships[attacker.ownerId]
+	local color = (owner and owner.teamColor) or Color3.new(1, 1, 1)
+	local speed = attacker.projSpeed or 90
+	local range = attacker.range or 40
+	local r = attacker.projRadius or 1.6
+	-- LOGIC (server): chỉ số, không tạo Part -> không có gì replicate mỗi frame.
+	projectiles[#projectiles + 1] = {
+		pos = origin, dir = dir, speed = speed, range = range, traveled = 0,
+		dmg = attacker.dmg, aoe = attacker.aoe or 0, ownerId = attacker.ownerId, radius = r,
+	}
+	-- VFX (client): bay ĐÚNG tới mục tiêu rồi dừng (không xuyên qua) — gửi khoảng cách tới mục tiêu.
+	local visDist = math.min(range, (target.part.Position - origin).Magnitude)
+	Remotes.ProjectileVFX:FireAllClients(origin, dir, speed, visDist, r, color)
+end
+
+local function updateProjectiles(dt)
+	for i = #projectiles, 1, -1 do
+		local pr = projectiles[i]
+		local step = pr.speed * dt
+		pr.pos = pr.pos + pr.dir * step
+		pr.traveled += step
+		local hit = firstEnemyHit(pr, pr.pos)
+		if hit then
+			local hitPos = hit.part.Position -- chốt trước khi damage (có thể huỷ part)
+			if pr.aoe > 0 then
+				applyAoe(hitPos, pr.aoe, pr.ownerId, pr.dmg, hit) -- nổ lan (trừ primary)
+				local owner = GameState.motherships[pr.ownerId]
+				local color = (owner and owner.teamColor) or Color3.new(1, 1, 1)
+				Remotes.Shockwave:FireAllClients(hitPos, pr.aoe, color) -- nổ AoE tại điểm chạm
+			end
+			damageEntity(hit, pr.dmg, pr.ownerId) -- primary
+			table.remove(projectiles, i)
+		elseif pr.traveled >= pr.range then
+			table.remove(projectiles, i) -- hết tầm -> tan
+		end
+	end
+end
+
+function CombatSystem.clearProjectiles()
+	table.clear(projectiles)
+end
+
 -- Một "attacker" (unit HOẶC mothership) bắn 1 nhịp nếu sẵn sàng.
 local function fireEntity(attacker, dt)
 	local part = attacker.part
 	if not part or not part.Parent then return end
 	if attacker.remnant then return end -- tàn quân trung lập: không bắn
+	if attacker.dummy then return end   -- bù nhìn test: chỉ chịu đòn, KHÔNG gây damage
+	if attacker.melee then return end   -- cận chiến: lao & đánh áp sát ở updateMelee riêng
 
 	-- Bước 3b: Kamikaze không bắn (chỉ lao va chạm) -> CombatSystem lo riêng.
 	if attacker.attack == "COLLISION" then return end
@@ -395,8 +526,7 @@ local function fireEntity(attacker, dt)
 			and (t.part.Position - part.Position).Magnitude <= attacker.range then
 			local owner = GameState.motherships[attacker.ownerId]
 			local color = (owner and owner.teamColor) or Color3.new(1, 1, 1)
-			damageEntity(t, attacker.dmg, attacker.ownerId)
-			Remotes.FireLaser:FireAllClients(part.Position, t.part.Position, color)
+			spawnProjectile(attacker, t) -- (Lordz) nạp xong -> bắn ĐẠN shell bay (không laser)
 		end
 		attacker.cooldown = 1 / attacker.fireRate
 		return
@@ -404,26 +534,63 @@ local function fireEntity(attacker, dt)
 
 	if attacker.cooldown > 0 then return end
 
-	-- MULTI_TARGET: bắn tối đa 3 enemy UNIT gần nhất cùng lúc (mỗi con đủ dmg).
-	if attacker.targeting == "MULTI_TARGET" then
-		local targets = nearestEnemyUnits(attacker, 3)
-		if #targets > 0 then
-			local owner = GameState.motherships[attacker.ownerId]
-			local color = (owner and owner.teamColor) or Color3.new(1, 1, 1)
-			local origin = part.Position
-			for _, t in ipairs(targets) do
-				local tpos = t.part.Position
-				damageEntity(t, attacker.dmg, attacker.ownerId)
-				Remotes.FireLaser:FireAllClients(origin, tpos, color)
-			end
-			attacker.cooldown = 1 / attacker.fireRate
-			return
+	-- (Lordz) VOLLEY: Battleship bắn 1 CỤM laser vào tối đa volleyCount địch gần nhất,
+	-- rồi nghỉ lâu (fireRate thấp) -> "1 lượt bắn giãn ra".
+	if attacker.targeting == "VOLLEY" then
+		local targets = nearestEnemyUnits(attacker, attacker.volleyCount or 6)
+		if #targets == 0 then return end
+		local owner = GameState.motherships[attacker.ownerId]
+		local color = (owner and owner.teamColor) or Color3.new(1, 1, 1)
+		local origin = part.Position
+		for _, t in ipairs(targets) do
+			damageEntity(t, attacker.dmg, attacker.ownerId)
+			Remotes.FireLaser:FireAllClients(origin, t.part.Position, color)
 		end
-		-- không có enemy unit -> rơi xuống single-target (building/mothership) bên dưới
+		attacker.cooldown = 1 / attacker.fireRate
+		return
+	end
+
+	-- (Lordz) DRAGON CONE: phun NÓN AoE — sát thương MỌI địch trong tầm + trong góc
+	-- coneAngle quanh hướng tới địch gần nhất (quét nhiều mục tiêu cùng 1 nhịp).
+	if attacker.targeting == "CONE" then
+		local aim = findTarget(attacker)
+		if not aim then return end
+		local origin = part.Position
+		local dir = flatUnitDir(origin, aim.part.Position)
+		if not dir then return end
+		local rng = attacker.range
+		local halfCos = math.cos((attacker.coneAngle or 1.05) / 2)
+		local function inCone(tp)
+			if (tp - origin).Magnitude > rng then return false end
+			local to = flatUnitDir(origin, tp)
+			return to ~= nil and to:Dot(dir) >= halfCos
+		end
+		for _, o in ipairs(GameState.units) do
+			if o.ownerId ~= attacker.ownerId and not o.remnant and o.part and o.part.Parent and inCone(o.part.Position) then
+				damageEntity(o, attacker.dmg, attacker.ownerId)
+			end
+		end
+		for _, e in pairs(GameState.motherships) do
+			if e.ownerId ~= attacker.ownerId and e.alive and e.part and inCone(e.part.Position)
+				and not shotBlockedByFleet(origin, e) then
+				damageEntity(e, attacker.dmg, attacker.ownerId)
+			end
+		end
+		-- VFX: nón lửa (quạt tia cam) do client vẽ.
+		Remotes.ConeBlast:FireAllClients(origin, dir, rng, attacker.coneAngle or 1.05, Color3.fromRGB(255, 150, 40))
+		attacker.cooldown = 1 / attacker.fireRate
+		return
 	end
 
 	local target = findTarget(attacker)
 	if not target then return end
+
+	-- (Lordz) ĐẠN BAY: xạ thủ bắn projectile bay thẳng (trúng địch đầu tiên) thay hitscan.
+	if attacker.projectile then
+		spawnProjectile(attacker, target)
+		attacker.cooldown = 1 / attacker.fireRate
+		return
+	end
 
 	-- Telegraph: unit có chargeTime (Siege) -> bắt đầu NẠP ĐẠN thay vì bắn ngay.
 	if (attacker.chargeTime or 0) > 0 then
@@ -570,10 +737,82 @@ local function updateKamikazes(dt)
 	end
 end
 
+-- Địch GẦN NHẤT (unit/mothership/building) trong bán kính rng — cho cận chiến bắt mục tiêu.
+local function nearestEnemyAny(u, rng)
+	local pos = u.part.Position
+	local best = gridNearestEnemyUnit(pos, u.ownerId, rng) -- units qua lưới không gian (nhẹ)
+	local bd = best and (best.part.Position - pos).Magnitude or nil
+	for _, e in pairs(GameState.motherships) do
+		if e.ownerId ~= u.ownerId and e.alive and e.part then
+			local d = (e.part.Position - pos).Magnitude
+			if d <= rng and (not bd or d < bd) then best, bd = e, d end
+		end
+	end
+	for _, b in ipairs(GameState.buildings) do
+		if b.ownerId ~= u.ownerId and b.part and b.part.Parent then
+			local d = (b.part.Position - pos).Magnitude
+			if d <= rng and (not bd or d < bd) then best, bd = b, d end
+		end
+	end
+	return best
+end
+
+local function meleeTargetValid(t, myOwner)
+	if not (t and t.part and t.part.Parent) then return false end
+	if t.ownerId == myOwner then return false end
+	if t.kind == "Mothership" and not t.alive then return false end
+	return true
+end
+
+-- CẬN CHIẾN (Lordz Swarm AI): unit melee bẻ đội hình LAO THẲNG vào địch gần nhất trong
+-- aggro; tới tầm với thì đánh áp sát theo nhịp; hết địch quanh -> nhả (về đội hình).
+local function updateMelee(dt)
+	for _, u in ipairs(GameState.units) do
+		if u.melee and u.part and u.part.Parent and not u.remnant then
+			local aggro = u.aggro or 70
+			local t = u.meleeTarget
+			if meleeTargetValid(t, u.ownerId) then
+				if (t.part.Position - u.part.Position).Magnitude > aggro then t = nil end
+			else
+				t = nil
+			end
+			if not t then
+				t = nearestEnemyAny(u, aggro)
+				u.meleeTarget = t
+			end
+			u.engaged = (t ~= nil)
+			if t then
+				local pos = u.part.Position
+				local tp = t.part.Position
+				local dist = Util.flatDist(pos, tp)
+				local reach = (u.range or 8) + (t.radius or 4)
+				u.cooldown = math.max(0, (u.cooldown or 0) - dt)
+				if dist > reach then
+					local dir = Util.flatDir(pos, tp)
+					if dir ~= Vector3.zero then
+						local step = math.min((u.speed or 40) * dt, dist - reach + 0.5)
+						local np = pos + dir * step
+						np = Vector3.new(np.X, pos.Y, np.Z)
+						u.part.CFrame = CFrame.lookAt(np, np + dir)
+					end
+				elseif u.cooldown <= 0 then
+					damageEntity(t, u.dmg, u.ownerId)
+					local owner = GameState.motherships[u.ownerId]
+					local color = (owner and owner.teamColor) or Color3.new(1, 1, 1)
+					Remotes.FireLaser:FireAllClients(pos, tp, color) -- loé chém áp sát
+					u.cooldown = 1 / (u.fireRate or 1)
+				end
+			end
+		end
+	end
+end
+
 local function updateCombat(dt)
 	rebuildUnitGrid() -- dựng lưới 1 lần/frame để findTarget quét ô lân cận (không O(n²))
+	updateProjectiles(dt) -- đạn bay di chuyển + va chạm (dùng lưới vừa dựng)
 	updateShockwaves(dt)
 	updateKamikazes(dt)
+	updateMelee(dt) -- cận chiến lao vào + đánh áp sát
 
 	-- Units bắn
 	for _, u in ipairs(GameState.units) do
@@ -599,7 +838,38 @@ end
 
 -- (Địch dummy debug đã được thay bằng bot thật ở BotSystem — M5.)
 
+-- Tìm entity (Mothership/Unit/Building) có part == `part` để chuyển click -> mục tiêu.
+local function resolveEntity(part)
+	for _, e in pairs(GameState.motherships) do
+		if e.part == part then return e end
+	end
+	for _, u in ipairs(GameState.units) do
+		if u.part == part and not u.remnant then return u end
+	end
+	for _, b in ipairs(GameState.buildings) do
+		if b.part == part then return b end
+	end
+	return nil
+end
+
+-- Client click 1 đối tượng -> đặt focus-fire cho CẢ fleet của người đó (nil = bỏ).
+local function onSetAttackTarget(player, part)
+	local owner = GameState.motherships[player.UserId]
+	if not owner then return end
+	if part == nil then owner.attackTarget = nil; return end
+	if typeof(part) ~= "Instance" then return end
+	local ent = resolveEntity(part)
+	-- Chỉ nhận mục tiêu ĐỊCH còn sống (không tự bắn mình / tàn quân).
+	if ent and ent.ownerId ~= player.UserId then
+		owner.attackTarget = ent
+	else
+		owner.attackTarget = nil
+	end
+end
+
 function CombatSystem.init()
+	Remotes.SetAttackTarget.OnServerEvent:Connect(onSetAttackTarget)
+
 	RunService.Heartbeat:Connect(function(dt)
 		updateCombat(dt)
 	end)

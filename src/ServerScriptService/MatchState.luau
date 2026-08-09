@@ -12,10 +12,21 @@
 
 local MatchState = {}
 
-MatchState.current = "LOBBY"
+MatchState.current = "LOBBY" -- "LOBBY" | "PLAYING" | "TEST"
 
+-- isPlaying = có mô phỏng trận (fleet/combat chạy). TRUE cho cả PLAYING lẫn TEST.
 function MatchState.isPlaying()
+	return MatchState.current == "PLAYING" or MatchState.current == "TEST"
+end
+
+-- isMatch = TRẬN THẬT (có bot, kinh tế, scrap, thắng/thua). Sandbox TEST thì FALSE.
+function MatchState.isMatch()
 	return MatchState.current == "PLAYING"
+end
+
+-- isTest = đang ở sandbox Test Combat (nơi riêng, không bot/kinh tế).
+function MatchState.isTest()
+	return MatchState.current == "TEST"
 end
 
 function MatchState.set(s)

@@ -298,14 +298,24 @@ function MothershipSystem.spawn(ownerId, isBot, spawnPos, teamColor)
 		lastAttackerId = nil,        -- ai bắn phát cuối (hiện tên trên bảng chết)
 		-- Thống kê trận (hiện trên bảng kết thúc)
 		stats = { unitsKilled = 0, mothershipsKilled = 0, scrapSpent = 0, unitsLost = 0 },
-		-- Split (M3): split=true khi đang giữ Space; splitDist ramp mượt 0<->SPLIT_DIST
-		split = false,
-		splitDist = 0,
+		-- Split (Lordz): splitLevel 0..SPLIT_MAX_LEVEL (số cụm = 2^level). rejoinAt = mốc
+		-- bắt đầu tự gộp; rejoining/rejoinNext = máy trạng thái gộp dần. aimPoint = con trỏ
+		-- thô (vệ tinh chase); satState = trạng thái anchor động của các cụm vệ tinh.
+		splitLevel = 0,
+		rejoinAt = 0,
+		rejoining = false,
+		rejoinNext = 0,
+		aimPoint = nil,
+		satState = nil,
+		attackTarget = nil, -- focus-fire: entity người chơi click để cả fleet nhắm (nil = auto)
 		-- Combat: mothership cũng tự bắn (dùng chung fire logic với unit ở CombatSystem)
 		dmg = Config.MOTHERSHIP.DMG,
 		range = Config.MOTHERSHIP.RANGE,
 		fireRate = Config.MOTHERSHIP.FIRE_RATE,
 		aoe = Config.MOTHERSHIP.AOE,
+		projectile = true, -- (Lordz) bắn ĐẠN BAY thay vì laser
+		projSpeed = Config.MOTHERSHIP.PROJ_SPEED,
+		projRadius = Config.MOTHERSHIP.PROJ_RADIUS,
 		cooldown = 0,
 		-- Economy (M4)
 		scrap = Config.ECONOMY.START_SCRAP,
