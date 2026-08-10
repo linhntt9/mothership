@@ -145,6 +145,21 @@ function EconomySystem.addGem(ownerId, amount)
 	EconomySystem.sendGemUpdate(ownerId)
 end
 
+-- Đặt thẳng số gem (dùng khi NẠP từ DataStore lúc vào server).
+function EconomySystem.setGems(ownerId, amount)
+	gemsByOwner[ownerId] = math.max(0, math.floor(amount or 0))
+	EconomySystem.sendGemUpdate(ownerId)
+end
+
+-- Trừ gem nếu đủ (dùng khi roll rương bằng Gem). Trả về true nếu trừ thành công.
+function EconomySystem.trySpendGems(ownerId, amount)
+	local have = gemsByOwner[ownerId] or 0
+	if have < amount then return false end
+	gemsByOwner[ownerId] = have - amount
+	EconomySystem.sendGemUpdate(ownerId)
+	return true
+end
+
 -- Gửi bảng GIÁ hiện tại (đã leo thang) để HUD hiển thị đúng.
 local BUILD_TIER = { ScrapMine = "SCRAP_MINE", DroneHub = "DRONE_HUB", LaserSat = "LASER_SAT", PlasmaSat = "PLASMA_SAT" }
 function EconomySystem.sendPrices(ownerId)

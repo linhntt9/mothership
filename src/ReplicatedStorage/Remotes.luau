@@ -57,6 +57,9 @@ local EVENT_NAMES = {
 	"MatchState",      -- server -> client: "lobby" | "playing" (đổi màn)
 	"SelectHero",      -- (Heroes) client -> server: chọn hero (heroId) -> buff nhóm quân
 	"HeroState",       -- (Heroes) server -> client: hero đang chọn (heroId | nil)
+	"ClaimGift",       -- (Gifts) client -> server: nhận quà theo mốc active-time; reply (index, ok, kind, amount)
+	"QuestState",      -- (Quest) server -> client: toàn bộ trạng thái quest (daily/weekly/unique)
+	"ClaimQuest",      -- (Quest) client -> server: nhận thưởng 1 quest (questId)
 	"OpenChest",       -- (Chest) client -> server: mở rương; server roll + reply (ok, reward, gems, cd)
 	"GemUpdate",       -- server -> client: số gem hiện tại
 	"LevelUpdate",     -- server -> client: cấp người chơi (thắng +1, thua -1)

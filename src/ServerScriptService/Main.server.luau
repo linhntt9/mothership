@@ -43,6 +43,7 @@ local PickupSystem = require(ServerScriptService.PickupSystem)
 local CombatSystem = require(ServerScriptService.CombatSystem)
 local BotSystem = require(ServerScriptService.BotSystem)
 local GameState = require(ServerScriptService.GameState)
+local QuestSystem = require(ServerScriptService.QuestSystem)
 
 -- Bọc trong pcall để 1 system lỗi không kéo sập cả game (coding standard mục 6)
 local function safeInit(name, system)
@@ -101,6 +102,122 @@ else
 	warn("[Config] DataStore không khả dụng — config sẽ KHÔNG được lưu.")
 end
 
+-- === PLAYER PERSISTENCE (DataStore) ===
+-- Lưu các Tàu Mẹ (class) người chơi ĐÃ ROLL ĐƯỢC + con đang lái, nạp lại lần sau.
+-- Cùng điều kiện với config: khi test trong Studio phải bật
+-- Game Settings -> Security -> "Enable Studio Access to API Services".
+local PLAYER_STORE = "MothershipPlayer_v1"
+local playerStore
+pcall(function() playerStore = DataStoreService:GetDataStore(PLAYER_STORE) end)
+local playerDirty = {}     -- [uid] = true khi có thay đổi cần lưu (debounce)
+local playerLastDaily = {} -- [uid] = os.time() lần nhận quà đăng nhập gần nhất
+local giftJoin = {}        -- [uid] = os.clock() lúc vào (mốc tính active-time cho Gifts)
+local giftClaimed = {}     -- [uid] = { [index]=true } quà đã nhận trong phiên
+local initialized = {}     -- [uid] = true khi đã khởi tạo (chống chạy trùng PlayerAdded/boot)
+
+local function playerKey(uid) return "u_" .. tostring(uid) end
+
+-- Nạp dữ liệu 1 người chơi vào GameState (LUÔN đảm bảo sở hữu con mặc định),
+-- nạp Gem đã tích, và phát quà ĐĂNG NHẬP HẰNG NGÀY nếu đủ hạn.
+local function loadPlayer(uid)
+	local owned, equipped, gems, lastDaily, questSaved
+	if playerStore then
+		local ok, data = pcall(function() return playerStore:GetAsync(playerKey(uid)) end)
+		if ok and type(data) == "table" then
+			if type(data.owned) == "table" then
+				owned = {}
+				for id in pairs(data.owned) do
+					if Config.HERO_BY_ID[id] then owned[id] = true end -- bỏ id rác/đã xoá
+				end
+			end
+			if type(data.equipped) == "string" and Config.HERO_BY_ID[data.equipped] then
+				equipped = data.equipped
+			end
+			if type(data.gems) == "number" then gems = data.gems end
+			if type(data.lastDaily) == "number" then lastDaily = data.lastDaily end
+			if type(data.quests) == "table" then questSaved = data.quests end
+		elseif not ok then
+			warn(("[Player] Đọc DataStore lỗi (uid %s): %s"):format(tostring(uid), tostring(data)))
+		end
+	end
+	QuestSystem.load(uid, questSaved) -- nạp tiến độ quest (hoặc tạo mới)
+	-- Tàu sở hữu + con đang lái
+	owned = owned or {}
+	owned[Config.DEFAULT_HERO] = true                          -- luôn có Swarm Lord
+	if not equipped or not owned[equipped] then equipped = Config.DEFAULT_HERO end
+	GameState.ownedHeroes[uid] = owned
+	GameState.activeHero[uid] = equipped
+
+	-- Gem: người mới có sẵn START; xét quà đăng nhập hằng ngày.
+	gems = gems or Config.GEMS.START
+	local now = os.time()
+	local dailyCd = (Config.GEMS.DAILY_HOURS or 24) * 3600
+	local grantedDaily = false
+	if not lastDaily or (now - lastDaily) >= dailyCd then
+		gems += Config.GEMS.DAILY
+		lastDaily = now
+		grantedDaily = true
+	end
+	playerLastDaily[uid] = lastDaily
+	EconomySystem.setGems(uid, gems)
+	if grantedDaily then
+		playerDirty[uid] = true
+		local player = Players:GetPlayerByUserId(uid)
+		if player then
+			Remotes.Notify:FireClient(player, ("Quà đăng nhập: +%d 💎"):format(Config.GEMS.DAILY))
+		end
+	end
+end
+
+-- Ghi dữ liệu 1 người chơi xuống DataStore.
+local function savePlayer(uid)
+	if not playerStore then return end
+	local owned = GameState.ownedHeroes[uid]
+	if not owned then return end
+	local data = {
+		owned = owned,
+		equipped = GameState.activeHero[uid],
+		gems = EconomySystem.getGems(uid),
+		lastDaily = playerLastDaily[uid],
+		quests = QuestSystem.serialize(uid),
+	}
+	local ok, err = pcall(function() playerStore:SetAsync(playerKey(uid), data) end)
+	if not ok then warn(("[Player] Lưu lỗi (uid %s): %s"):format(tostring(uid), tostring(err))) end
+end
+
+-- Lưu khi người chơi rời server (nếu có thay đổi treo).
+Players.PlayerRemoving:Connect(function(player)
+	local uid = player.UserId
+	if playerDirty[uid] then
+		playerDirty[uid] = nil
+		savePlayer(uid)
+	end
+	giftJoin[uid] = nil
+	giftClaimed[uid] = nil
+	initialized[uid] = nil
+	QuestSystem.unload(uid)
+end)
+
+-- Lưu định kỳ những ai vừa roll/đổi tàu (debounce, tránh spam DataStore).
+if playerStore then
+	task.spawn(function()
+		while true do
+			task.wait(6)
+			for uid in pairs(playerDirty) do
+				playerDirty[uid] = nil
+				savePlayer(uid)
+			end
+		end
+	end)
+end
+
+-- Server tắt: cố lưu nốt các thay đổi còn treo.
+game:BindToClose(function()
+	for uid in pairs(playerDirty) do
+		savePlayer(uid)
+	end
+end)
+
 safeInit("MapSystem", MapSystem)
 safeInit("MothershipSystem", MothershipSystem)
 safeInit("FleetSystem", FleetSystem)
@@ -109,6 +226,9 @@ safeInit("BuildingSystem", BuildingSystem)
 safeInit("PickupSystem", PickupSystem)
 safeInit("CombatSystem", CombatSystem)
 safeInit("BotSystem", BotSystem)
+safeInit("QuestSystem", QuestSystem)
+-- Quest đổi -> đánh dấu lưu (persist chung bản ghi người chơi).
+QuestSystem.onDirty = function(uid) playerDirty[uid] = true end
 
 -------------------------------------------------------------------------------
 -- VÒNG ĐỜI TRẬN (Lobby <-> Playing)
@@ -150,6 +270,7 @@ local function startMatch()
 	PickupSystem.reset()            -- rải scrap theo MAP.SIZE + PICKUP
 	MothershipSystem.respawnPlayers()
 	BotSystem.reset()               -- spawn bot
+	QuestSystem.onMatchStart()      -- xét co-play bạn bè cho quest daily
 	broadcastState()
 	Remotes.TestState:FireAllClients(false)
 	print("[Main] Vào trận.")
@@ -228,15 +349,27 @@ Remotes.StartTest.OnServerEvent:Connect(startTest)   -- (dev) vào sandbox Test 
 Remotes.TestSpawn.OnServerEvent:Connect(onTestSpawn) -- (dev) bơm quân test
 
 -- Người vào server: khởi tạo sở hữu Tàu Mẹ (mở sẵn con mặc định) + gửi trạng thái.
-Players.PlayerAdded:Connect(function(player)
+-- Guard `initialized`: chạy 1 lần/người (PlayerAdded + vòng quét boot có thể gọi trùng).
+local function onPlayerAdded(player)
 	local uid = player.UserId
-	GameState.ownedHeroes[uid] = GameState.ownedHeroes[uid] or { [Config.DEFAULT_HERO] = true }
-	GameState.activeHero[uid] = GameState.activeHero[uid] or Config.DEFAULT_HERO
+	if initialized[uid] then return end
+	initialized[uid] = true
+	loadPlayer(uid) -- nạp Tàu Mẹ đã sở hữu + con đang lái + tiến độ quest + Gem
+	giftJoin[uid] = os.clock() -- mốc tính active-time cho Gifts (reset mỗi phiên)
+	giftClaimed[uid] = {}
 	Remotes.MatchState:FireClient(player, MatchState.isPlaying() and "playing" or "lobby")
 	Remotes.HeroState:FireClient(player, GameState.activeHero[uid], GameState.ownedHeroes[uid])
 	local pos = MatchState.isPlaying() and MothershipSystem.playerSpawnPos() or lobbyShipPos()
 	MothershipSystem.spawn(uid, false, pos, Config.TEAM.PLAYER)
-end)
+	-- Gửi lại số Gem + trạng thái Quest sau khi client kịp kết nối handler.
+	task.delay(2, function()
+		if Players:GetPlayerByUserId(uid) then
+			EconomySystem.sendGemUpdate(uid)
+			QuestSystem.sendState(uid)
+		end
+	end)
+end
+Players.PlayerAdded:Connect(onPlayerAdded)
 
 -- Chọn Tàu Mẹ để lái (chỉ con ĐÃ sở hữu). Đổi cả buff (quân spawn mới) lẫn tạo hình.
 Remotes.SelectHero.OnServerEvent:Connect(function(player, heroId)
@@ -245,6 +378,7 @@ Remotes.SelectHero.OnServerEvent:Connect(function(player, heroId)
 	local owned = GameState.ownedHeroes[uid] or {}
 	if not owned[heroId] then return end -- chưa sở hữu -> bỏ qua
 	GameState.activeHero[uid] = heroId
+	playerDirty[uid] = true      -- lưu con đang lái
 	MothershipSystem.reskin(uid) -- đổi tạo hình Tàu Mẹ ngay ở sảnh
 	Remotes.HeroState:FireClient(player, heroId, owned)
 end)
@@ -262,36 +396,86 @@ local function rollHero()
 	end
 	return Config.HEROES[#Config.HEROES]
 end
-Remotes.OpenChest.OnServerEvent:Connect(function(player)
-	local uid = player.UserId
-	if MatchState.isPlaying() then
-		Remotes.OpenChest:FireClient(player, false, nil, 0)
-		return
-	end
-	local now = tick()
+-- Số giây còn lại của lượt roll MIỄN PHÍ (client hiện đồng hồ đếm).
+local function freeRemaining(uid)
 	local last = chestLastOpen[uid]
-	local cd = Config.LOBBY.CHEST.COOLDOWN
-	if last and (now - last) < cd then
-		Remotes.OpenChest:FireClient(player, false, nil, math.ceil(cd - (now - last)))
-		return
-	end
-	chestLastOpen[uid] = now
+	if not last then return 0 end
+	return math.max(0, math.ceil(Config.LOBBY.CHEST.COOLDOWN - (tick() - last)))
+end
 
+-- Thực hiện 1 lượt roll: chọn tàu, ghi sở hữu, đánh dấu lưu nếu là tàu mới.
+local function doRoll(uid)
 	local h = rollHero()
 	local owned = GameState.ownedHeroes[uid] or {}
 	GameState.ownedHeroes[uid] = owned
 	local isNew = not owned[h.id]
 	owned[h.id] = true
+	if isNew then playerDirty[uid] = true end -- có tàu mới -> lưu
+	return { isNew = isNew, id = h.id, name = h.name, rarity = h.rarity, color = h.color }, owned
+end
 
-	Remotes.OpenChest:FireClient(player, true, {
-		isNew = isNew, id = h.id, name = h.name, rarity = h.rarity, color = h.color,
-	}, cd)
-	-- Cập nhật panel chọn Tàu Mẹ (owned mới) — giữ nguyên con đang lái.
+-- mode = "gem" (tốn Gem, không cooldown) | "free"/nil (miễn phí, có cooldown).
+-- Reply: (ok, reward|nil, freeRemaining, reason). reason = "playing"|"cooldown"|"nogem".
+Remotes.OpenChest.OnServerEvent:Connect(function(player, mode)
+	local uid = player.UserId
+	if MatchState.isPlaying() then
+		Remotes.OpenChest:FireClient(player, false, nil, 0, "playing")
+		return
+	end
+	if mode == "gem" then
+		if not EconomySystem.trySpendGems(uid, Config.LOBBY.CHEST.GEM_COST) then
+			Remotes.OpenChest:FireClient(player, false, nil, freeRemaining(uid), "nogem")
+			return
+		end
+	else -- miễn phí: kiểm tra cooldown
+		local now = tick()
+		local last = chestLastOpen[uid]
+		local cd = Config.LOBBY.CHEST.COOLDOWN
+		if last and (now - last) < cd then
+			Remotes.OpenChest:FireClient(player, false, nil, math.ceil(cd - (now - last)), "cooldown")
+			return
+		end
+		chestLastOpen[uid] = now
+	end
+
+	local reward, owned = doRoll(uid)
+	Remotes.OpenChest:FireClient(player, true, reward, freeRemaining(uid), nil)
+	-- Cập nhật panel My Ship (owned mới) — giữ nguyên con đang lái.
 	Remotes.HeroState:FireClient(player, GameState.activeHero[uid], owned)
+end)
+
+-- GIFTS: nhận quà mốc `index` nếu active-time đủ & chưa nhận trong phiên.
+-- Reply: (index, ok, kind, amount). Scrap/Gem cộng qua EconomySystem (bền theo owner).
+Remotes.ClaimGift.OnServerEvent:Connect(function(player, index)
+	local uid = player.UserId
+	if typeof(index) ~= "number" then return end
+	local gift = Config.GIFTS[index]
+	if not gift then return end
+	local claimed = giftClaimed[uid]
+	if not claimed then claimed = {}; giftClaimed[uid] = claimed end
+	if claimed[index] then return end -- đã nhận
+	local active = os.clock() - (giftJoin[uid] or os.clock())
+	if active < gift.at then
+		Remotes.ClaimGift:FireClient(player, index, false) -- chưa tới mốc
+		return
+	end
+	claimed[index] = true
+	if gift.kind == "gem" then
+		EconomySystem.addGem(uid, gift.amount)
+	else
+		EconomySystem.add(uid, gift.amount) -- scrap (bền theo owner)
+	end
+	Remotes.ClaimGift:FireClient(player, index, true, gift.kind, gift.amount)
 end)
 
 -- Boot: vào thẳng lobby (dọn arena mà MapSystem.init vừa dựng, thay bằng sảnh).
 enterLobby()
+
+-- Chống race Play-Solo: người chơi có thể đã vào TRƯỚC khi PlayerAdded kết nối
+-- (khi đó tàu sảnh do enterLobby spawn nhưng loadPlayer/quest chưa chạy). Quét lại.
+for _, p in ipairs(Players:GetPlayers()) do
+	task.spawn(onPlayerAdded, p)
+end
 
 -- DEV: sửa Config lúc chạy từ bảng config in-game + ghi nhận để LƯU.
 Remotes.SetConfig.OnServerEvent:Connect(function(player, path, value)
