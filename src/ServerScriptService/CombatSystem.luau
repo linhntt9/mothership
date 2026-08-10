@@ -151,6 +151,8 @@ local function killMothership(ent)
 	end
 end
 
+CombatSystem.killMothership = killMothership -- expose cho OOB death (MothershipSystem.killFn)
+
 -- Gây damage cho 1 entity (unit hoặc mothership) và xử lý chết.
 local function damageEntity(ent, amount, attackerOwner)
 	if ent.kind == "Mothership" then
@@ -179,8 +181,13 @@ local function damageEntity(ent, amount, attackerOwner)
 			if attackerOwner then -- thưởng scrap cho kẻ phá công trình địch
 				EconomySystem.add(attackerOwner, Config.ECONOMY.BUILDING_KILL_REWARD)
 			end
+			if ent.isWardenCore and CombatSystem.onWardenCore then
+				-- Hạ trùm: thưởng + reset người kết liễu + Warden hồi sinh (WardenSystem lo).
+				CombatSystem.onWardenCore(attackerOwner)
+			end
 			if ent.part then
-				Remotes.Shockwave:FireAllClients(ent.part.Position, 16, Color3.fromRGB(255, 150, 60)) -- NỔ
+				local r = ent.isWardenCore and 60 or 16 -- Warden nổ CỰC lớn
+				Remotes.Shockwave:FireAllClients(ent.part.Position, r, Color3.fromRGB(255, 150, 60))
 			end
 			BuildingSystem.destroyBuilding(ent)
 		end
@@ -508,7 +515,7 @@ local function updateProjectiles(dt)
 			local hitPos = hit.part.Position -- chốt trước khi damage (có thể huỷ part)
 			if pr.aoe > 0 then
 				applyAoe(hitPos, pr.aoe, pr.ownerId, pr.dmg, hit) -- nổ lan (trừ primary)
-				Remotes.Shockwave:FireAllClients(hitPos, pr.aoe, pr.color) -- nổ AoE tại điểm chạm
+				Remotes.Explosion:FireAllClients(hitPos, pr.aoe, pr.color) -- VFX nổ AoE (màu theo đạn)
 			end
 			damageEntity(hit, pr.dmg, pr.ownerId) -- primary
 			table.remove(projectiles, i)
@@ -516,7 +523,7 @@ local function updateProjectiles(dt)
 			-- Hết tầm: đạn có AoE (vd blast Battleship) vẫn NỔ tại điểm cuối.
 			if pr.aoe > 0 then
 				applyAoe(pr.pos, pr.aoe, pr.ownerId, pr.dmg, nil)
-				Remotes.Shockwave:FireAllClients(pr.pos, pr.aoe, pr.color)
+				Remotes.Explosion:FireAllClients(pr.pos, pr.aoe, pr.color)
 			end
 			table.remove(projectiles, i)
 		end
@@ -727,9 +734,7 @@ local function explodeKamikaze(u)
 	for _, ent in ipairs(hits) do
 		damageEntity(ent, u.dmg, ownerId)
 	end
-	local owner = GameState.motherships[ownerId]
-	local color = (owner and owner.teamColor) or Color3.new(1, 1, 1)
-	Remotes.Shockwave:FireAllClients(center, r, color) -- dùng lại VFX cầu nổ
+	Remotes.Explosion:FireAllClients(center, r) -- VFX nổ lửa AoE khi Kamikaze lao vào nổ
 	if u.part then u.part:Destroy() end
 end
 
@@ -805,13 +810,15 @@ local function updateMelee(dt)
 		if u.melee and u.part and u.part.Parent and not u.remnant then
 			local aggro = (Config.UNITS[u.unitType] and Config.UNITS[u.unitType].aggro) or u.aggro or 100
 			local owner = GameState.motherships[u.ownerId]
-			local oPos = owner and owner.part and owner.part.Position
+			-- PLAYER: aggro đo từ Tàu Mẹ (lái xa -> lính nhả về). BOT/guard: đo từ CHÍNH con lính
+			-- -> tự đánh mọi kẻ tới gần (bot hung hãn như trước, không cần lái sát).
+			local oPos = (owner and owner.part and not owner.isBot) and owner.part.Position or u.part.Position
 			-- NHẮM tính theo vị trí TÀU MẸ (chỉ huy): ưu tiên mục tiêu CLICK (focus), không thì
 			-- địch gần nhất trong aggro TÍNH TỪ TÀU MẸ. Lái Tàu Mẹ RA XA bãi địch -> mọi melee
 			-- mất mục tiêu -> NHẢ & quay về đội hình (gọi về được, không lock chết).
 			local t = nil
 			if oPos then
-				local focus = owner.attackTarget
+				local focus = owner and owner.attackTarget -- owner có thể nil (guard Warden) -> tránh crash
 				if focus and meleeTargetValid(focus, u.ownerId)
 					and (focus.part.Position - oPos).Magnitude <= MELEE_FOCUS_LEASH then
 					t = focus
@@ -831,7 +838,7 @@ local function updateMelee(dt)
 				if dist > reach then
 					local dir = Util.flatDir(pos, tp)
 					if dir ~= Vector3.zero then
-						local step = math.min((u.speed or 40) * dt, dist - reach + 0.5)
+						local step = math.min((u.speed or 40) * dt, dist - reach) -- dừng ĐÚNG khoảng hover
 						local np = pos + dir * step
 						np = Vector3.new(np.X, pos.Y, np.Z)
 						u.part.CFrame = CFrame.lookAt(np, np + dir)

@@ -29,6 +29,8 @@ local EVENT_NAMES = {
 	"SiegeCharge", -- server -> client: telegraph nạp đạn Siege (origin, target, color, duration)
 	"Shockwave",   -- server -> client: VFX sóng xung Titan (center, radius, color)
 	"ConeBlast",   -- server -> client: VFX nón lửa Dragon (origin, dir, range, angle, color)
+	"Explosion",   -- server -> client: VFX nổ lửa AoE (center, radius) — Kamikaze lao vào nổ
+	"OOBWarn",     -- server -> client: ra khỏi ranh map (giây còn lại; 0 = an toàn/ẩn) -> overlay đếm giờ
 	"ProjectileVFX", -- server -> client: VFX 1 viên đạn bay (origin, dir, speed, range, radius, color)
 	"GameOver",    -- (M2) server -> client: kết thúc ván ("victory" | "defeat")
 	"DebugEnemy",  -- (M2) client -> server: spawn 1 hạm đội địch dummy để test combat

@@ -19,6 +19,8 @@ local Config = {}
 Config.MAP = {
 	SIZE = 2500,              -- baseplate 2500 x 2500 studs, tâm ở (0,0) — map lớn (x5 so với proto 500)
 	TEST_SIZE = 500,          -- ranh giới di chuyển trong sandbox Test (nền phẳng ~500)
+	OOB_MARGIN = 240,         -- vùng NGOÀI RANH map cho phép bay vào (rồi bị đếm giờ); quá đây có tường
+	OOB_TIME = 6,             -- giây ở ngoài ranh trước khi Tàu Mẹ CHẾT (quay về để huỷ)
 	-- MỎ (ore deposit): nơi DUY NHẤT đặt được Scrap Mine. Có hình dạng riêng
 	-- (tinh thể phát sáng) để phân biệt với mặt đất trống (chỗ đặt Hub).
 	ORE_DEPOSIT_COUNT = 24,    -- nhiều mỏ cho map lớn 2500 (proto 500 dùng 5)
@@ -180,7 +182,7 @@ Config.MOTHERSHIP = {
 	SPEED_WEIGHT_PENALTY = 0.005, -- mỗi điểm weight giảm 0.5% tốc độ (weight giờ nặng hơn nên penalty nhỏ lại)
 	SPEED_MIN_MULT = 0.55,        -- sàn: không chậm hơn 55% tốc độ nền
 	RADIUS = 6,
-	BUILD_CHANNEL = 0.8, -- giây khoá di chuyển khi xây (canon: xây/nâng dừng di chuyển)
+	BUILD_CHANNEL = 0, -- giây khoá di chuyển khi xây (0 = xây tức thì, không khoá)
 	STOP_DIST = 2,       -- khoảng cách coi như đã tới đích (tránh rung quanh target)
 	MOVE_LEASH = 70,     -- đích di chuyển bị kẹp cách Tàu Mẹ tối đa bấy nhiêu studs
 	                     -- (trỏ chuột chỉ "kéo" trong 1 khoảng -> điều khiển kiểu steer)
@@ -192,6 +194,7 @@ Config.MOTHERSHIP = {
 	AOE = 10,            -- bán kính sát thương lan quanh mục tiêu
 	PROJ_SPEED = 110,    -- (Lordz) Tàu Mẹ bắn ĐẠN BAY (không laser); tốc độ đạn (studs/s)
 	PROJ_RADIUS = 2.2,   -- bán kính đạn Tàu Mẹ
+	RADAR_RANGE = 200,   -- tầm RADAR: minimap chỉ lộ địch/mỏ trong bán kính này quanh Tàu Mẹ
 
 	-- Tự hồi máu khi RA KHỎI giao tranh (không trúng đòn trong REGEN_DELAY giây).
 	REGEN_DELAY = 6,     -- giây kể từ phát trúng cuối mới bắt đầu hồi
@@ -268,7 +271,7 @@ Config.UNITS = {
 	-- lượng unit loại đó 1 owner được có cùng lúc.
 	Drone = { -- Soldier
 		displayName = "Drone",
-		cost = 15, hp = 40, dmg = 6, range = 6, fireRate = 2.0, speed = 62,
+		cost = 15, hp = 40, dmg = 6, range = 16, fireRate = 2.0, speed = 62, -- range = khoảng HOVER khi đánh
 		ring = "SCREEN", weight = 1, aoeRadius = 0, maxCount = 200,
 		attack = "COLLISION", targeting = "STANDARD",
 		melee = true, aggro = 100, -- (Lordz) Soldier cận chiến; aggro = tầm engage tính TỪ TÀU MẸ
@@ -283,22 +286,23 @@ Config.UNITS = {
 	},
 	Destroyer = { -- Barbarian (canon không nêu số -> ước lượng)
 		displayName = "Destroyer",
-		cost = 200, hp = 600, dmg = 30, range = 8, fireRate = 0.8, speed = 42,
+		cost = 200, hp = 600, dmg = 30, range = 18, fireRate = 0.8, speed = 42, -- range = khoảng HOVER
 		ring = "GUARD", weight = 3, aoeRadius = 0, maxCount = 100,
 		attack = "COLLISION", targeting = "STANDARD",
 		melee = true, aggro = 110, -- (Lordz) CẬN CHIẾN; aggro = tầm engage từ Tàu Mẹ
 	},
 	PlasmaCruiser = { -- Mage
 		displayName = "Plasma",
-		cost = 450, hp = 200, dmg = 30, range = 34, fireRate = 0.6, speed = 26,
-		ring = "CORE", weight = 8, aoeRadius = 12, maxCount = 125,
+		cost = 450, hp = 200, dmg = 30, range = 58, fireRate = 0.6, speed = 26, -- Mage: đánh TẦM XA
+		ring = "CORE", weight = 8, aoeRadius = 14, maxCount = 125,
 		attack = "HITSCAN", targeting = "STANDARD",
-		projectile = true, projSpeed = 62, projRadius = 2.4, -- (Lordz) cầu lửa bay -> NỔ LAN tại điểm chạm
+		projectile = true, projSpeed = 78, projRadius = 3.0, -- cầu plasma bay -> NỔ AoE quanh mục tiêu
+		projColor = Color3.fromRGB(190, 90, 255), -- tím plasma (đạn + vụ nổ)
 	},
 	-- Bước 1 — biến thể targeting riêng (dùng chung khung hitscan):
 	Interceptor = { -- Knight
 		displayName = "Interceptor",
-		cost = 75, hp = 90, dmg = 14, range = 7, fireRate = 1.6, speed = 88,
+		cost = 75, hp = 90, dmg = 14, range = 16, fireRate = 1.6, speed = 88, -- range = khoảng HOVER
 		ring = "SCREEN", weight = 2, aoeRadius = 0, maxCount = 200,
 		attack = "COLLISION", targeting = "STANDARD",
 		melee = true, aggro = 130, -- (Lordz) kỵ binh: lao nhanh, tầm engage từ Tàu Mẹ hơi xa hơn
@@ -323,7 +327,7 @@ Config.UNITS = {
 	-- Bước 3a — CC: mỗi 1/fireRate giây phát sóng xung STUN + đẩy lệch đội hình địch.
 	Titan = { -- Troll
 		displayName = "Titan",
-		cost = 3000, hp = 700, dmg = 40, range = 10, fireRate = 0.5, speed = 30,
+		cost = 3000, hp = 700, dmg = 40, range = 22, fireRate = 0.5, speed = 30, -- range = khoảng HOVER
 		ring = "GUARD", weight = 15, aoeRadius = 0, maxCount = 5,
 		attack = "COLLISION", targeting = "STANDARD", special = "GRAVITY_STUN",
 		melee = true, aggro = 90, -- (Lordz) Troll; aggro engage từ Tàu Mẹ (vẫn phát sóng xung STUN)
@@ -339,6 +343,13 @@ Config.UNITS = {
 		attack = "COLLISION", targeting = "MOTHERSHIP_FLEET_ONLY", special = "KAMIKAZE",
 		armRange = 45, -- Mothership/fleet địch vào tầm này -> rời quỹ đạo, lao thẳng
 	},
+}
+
+-- HỆ SỐ SIZE từng loại quân (nhân vào kích cỡ gốc). Đổi ở đây (hoặc ⚙) để phóng to/thu
+-- nhỏ unit; áp cho quân SPAWN MỚI. 1 = giữ nguyên.
+Config.UNIT_SIZE = {
+	Drone = 1, Frigate = 1, Destroyer = 1, PlasmaCruiser = 1, Interceptor = 1,
+	Battleship = 1, SiegeRailgun = 1, Titan = 1, Kamikaze = 1,
 }
 
 -------------------------------------------------------------------------------
@@ -527,5 +538,35 @@ Config.RARITY_COLOR = {
 -- Tra Tàu Mẹ theo id (dựng sẵn cho server/client).
 Config.HERO_BY_ID = {}
 for _, h in ipairs(Config.HEROES) do Config.HERO_BY_ID[h.id] = h end
+
+-------------------------------------------------------------------------------
+-- WARDEN FORTRESS — pháo đài TRUNG TÂM cực mạnh (end goal). Phá được CORE = THẮNG ván.
+-- Core máu khổng lồ + vòng tháp canh mạnh bắn mọi kẻ tới gần. Cần đội quân cực khoẻ.
+-------------------------------------------------------------------------------
+Config.WARDEN = {
+	ENABLED = true,
+	CORE_HP = 80000,        -- máu lõi KHỔNG LỒ (late-game mới phá nổi)
+	CORE_SIZE = 60,
+	-- 12 THÁP PHÁP SƯ (nổ lan AoE): 4 sát lõi ("gắn kèm") + 8 vòng ngoài độc lập.
+	-- AoE phạt nặng nếu gom quân chạy vào bừa -> phải bắn tỉa từ xa.
+	TOWERS_INNER = 4,
+	TOWERS_OUTER = 8,
+	INNER_RING = 46,
+	OUTER_RING = 118,
+	TOWER_HP = 10000,       -- tháp rất trâu
+	TOWER_DMG = 42,
+	TOWER_AOE = 16,         -- NỔ LAN
+	TOWER_RANGE = 88,
+	TOWER_FIRERATE = 1.0,
+	TOWER_PROJSPEED = 72,   -- cầu năng lượng bay
+	-- 4 TROLL (Titan) gác cổng.
+	TROLLS = 4,
+	TROLL_RING = 80,
+	-- Thưởng khi RA ĐÒN KẾT LIỄU; sau đó Warden HỒI SINH (boss lặp lại, trận không kết thúc).
+	REWARD_GEM = 500,
+	REWARD_SCRAP = 5000,
+	RESPAWN_DELAY = 4,      -- giây Warden hồi sinh sau khi bị hạ
+	RESET_KILLER = true,    -- người kết liễu bị RESET quân + nhà (đúng Lordz)
+}
 
 return Config

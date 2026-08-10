@@ -45,7 +45,7 @@ local globalTheta = 0        -- góc quay chung của mọi hạm đội (rad)
 local VISUAL = {
 	Drone         = { class = "WedgePart", size = Vector3.new(3.4, 1.8, 4.2), material = Enum.Material.Neon },
 	Frigate       = { class = "Part", shape = Enum.PartType.Block, size = Vector3.new(2.6, 1.4, 5.8), material = Enum.Material.Metal },
-	Destroyer     = { class = "Part", shape = Enum.PartType.Ball,  size = Vector3.new(7.4, 3.2, 7.4), material = Enum.Material.Metal },
+	Destroyer     = { class = "Part", shape = Enum.PartType.Block, size = Vector3.new(7.5, 4, 8), material = Enum.Material.Metal }, -- tank chắn vòng giữa
 	PlasmaCruiser = { class = "Part", shape = Enum.PartType.Ball,  size = Vector3.new(5.2, 5.2, 5.2), material = Enum.Material.Neon },
 	-- Bước 1
 	Interceptor   = { class = "WedgePart", size = Vector3.new(2.8, 1.4, 5.4), material = Enum.Material.Neon },      -- dart mảnh, nhanh
@@ -53,9 +53,9 @@ local VISUAL = {
 	-- Bước 2
 	SiegeRailgun  = { class = "Part", shape = Enum.PartType.Block, size = Vector3.new(2.2, 2.2, 9.0), material = Enum.Material.Metal }, -- nòng pháo dài
 	-- Bước 3a
-	Titan         = { class = "Part", shape = Enum.PartType.Ball,  size = Vector3.new(9.5, 4.5, 9.5), material = Enum.Material.Metal }, -- khối CC to
+	Titan         = { class = "Part", shape = Enum.PartType.Ball,  size = Vector3.new(28.5, 13.5, 28.5), material = Enum.Material.Metal }, -- TROLL khổng lồ (x3)
 	-- Bước 3b
-	Kamikaze      = { class = "WedgePart", size = Vector3.new(2.4, 1.4, 3.6), material = Enum.Material.Neon }, -- dart nhỏ suicide
+	Kamikaze      = { class = "WedgePart", size = Vector3.new(4.4, 0.9, 6.2), material = Enum.Material.Neon }, -- MŨI TÊN/tam giác dẹt lao cảm tử
 }
 
 -- Fleet cap tối đa của 1 owner = BASE_CAP + tổng bonus của các Drone Hub sở hữu.
@@ -101,7 +101,7 @@ local function makeUnitPart(unitType, pos, teamColor)
 	if v.shape and p:IsA("Part") then
 		p.Shape = v.shape
 	end
-	p.Size = v.size
+	p.Size = v.size * ((Config.UNIT_SIZE and Config.UNIT_SIZE[unitType]) or 1) -- hệ số size từ Config
 	p.Position = pos
 	p.Color = teamColor     -- màu = phe (bạn/địch)
 	p.Material = v.material
@@ -135,14 +135,14 @@ end
 
 -- Spawn 1 unit cho owner. ignoreCap=true để bỏ qua giới hạn cap (bot/debug).
 -- Trả về true nếu thành công.
-function FleetSystem.spawnUnit(ownerId, unitType, ignoreCap)
+function FleetSystem.spawnUnit(ownerId, unitType, ignoreCap, guardPos)
 	local stats = Config.UNITS[unitType]
 	if not stats then
 		return false
 	end
 
 	local owner = GameState.motherships[ownerId]
-	if not owner or not owner.alive then
+	if not guardPos and (not owner or not owner.alive) then
 		return false
 	end
 
@@ -153,7 +153,7 @@ function FleetSystem.spawnUnit(ownerId, unitType, ignoreCap)
 	end
 
 	-- Spawn ngay tại vị trí Tàu Mẹ rồi để nó bay ra ring cho đẹp
-	local part = makeUnitPart(unitType, owner.part.Position, owner.teamColor)
+	local part = makeUnitPart(unitType, guardPos or owner.part.Position, (owner and owner.teamColor) or Config.TEAM.ENEMY)
 
 	-- Buff hero (bị động, theo nhóm quân): nhân dmg/hp lúc spawn.
 	local dmgMult, hpMult = FleetSystem.getHeroBuff(ownerId, stats.ring)
@@ -166,7 +166,7 @@ function FleetSystem.spawnUnit(ownerId, unitType, ignoreCap)
 		unitType = unitType,
 		ring = stats.ring,      -- "SCREEN" | "GUARD" | "CORE"
 		part = part,
-		radius = math.max(vis.size.X, vis.size.Z) / 2, -- bán kính va chạm (separation)
+		radius = math.max(part.Size.X, part.Size.Z) / 2, -- bán kính va chạm (theo size thực đã nhân hệ số)
 		hp = hp,
 		maxHp = hp,
 		speed = stats.speed,
@@ -194,11 +194,12 @@ function FleetSystem.spawnUnit(ownerId, unitType, ignoreCap)
 		pushStrength = stats.pushStrength,
 		-- Bước 3b — Kamikaze; armed/kamiTarget set khi lao.
 		armRange = stats.armRange,
+		guard = guardPos ~= nil, -- Warden guard: đứng gác, không cần Tàu Mẹ / không bị dọn
 		cooldown = 0,           -- đếm lùi tới lần bắn kế
 	}
 	table.insert(GameState.units, unit)
 
-	FleetSystem.sendFleetUpdate(ownerId)
+	if not guardPos then FleetSystem.sendFleetUpdate(ownerId) end
 	return true
 end
 
@@ -230,7 +231,7 @@ local function cleanupUnits()
 		local u = GameState.units[i]
 		local dead = (not u.part) or (not u.part.Parent)
 		local remove = dead
-		if not dead and not u.remnant and not u.dummy then
+		if not dead and not u.remnant and not u.dummy and not u.guard then
 			-- Không phải tàn quân: mất chủ (Tàu Mẹ chết/rời) -> huỷ.
 			-- (Tàu Mẹ chết đã convertToRemnants nên quân của nó thành tàn quân, giữ lại.)
 			local owner = GameState.motherships[u.ownerId]
@@ -728,6 +729,18 @@ function FleetSystem.captureRemnants()
 			end
 		end
 	end
+end
+
+-- Xoá toàn bộ unit của 1 owner (dùng khi reset người kết liễu Warden / dọn guard Warden).
+function FleetSystem.clearOwner(ownerId)
+	for i = #GameState.units, 1, -1 do
+		local u = GameState.units[i]
+		if u.ownerId == ownerId then
+			if u.part then u.part:Destroy() end
+			table.remove(GameState.units, i)
+		end
+	end
+	FleetSystem.sendFleetUpdate(ownerId)
 end
 
 -- Xoá sạch mọi unit (dùng khi Restart).

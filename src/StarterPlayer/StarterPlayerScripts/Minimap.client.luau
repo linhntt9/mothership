@@ -37,6 +37,13 @@ local COL_DEPOSIT   = Color3.fromRGB(255, 210, 80)
 local COL_MY_BLD    = Color3.fromRGB(80, 220, 200)
 local COL_ENEMY_BLD = Color3.fromRGB(230, 90, 90)
 local COL_MY_SHIP   = Color3.fromRGB(120, 255, 140)
+local COL_ENEMY     = Color3.fromRGB(255, 70, 70)
+
+-- RADAR: minimap chỉ lộ địch/mỏ/scrap trong bán kính này quanh Tàu Mẹ. Vết ĐỊCH còn
+-- lưu RADAR_FADE giây sau khi ra khỏi tầm rồi mờ dần -> mất.
+local RADAR_RANGE = Config.MOTHERSHIP.RADAR_RANGE or 380
+local RADAR_FADE = 4
+local radarMem = {} -- [mothershipPart] = { lastSeen, pos }
 
 -------------------------------------------------------------------------------
 -- GUI khung
@@ -118,23 +125,35 @@ local function nextDot()
 	return d
 end
 
-local function placeDot(x, z, sizePx, color, strokeColor)
+local function placeDot(x, z, sizePx, color, strokeColor, transparency)
 	local d = nextDot()
 	local px, py = toMini(x, z)
 	d.Size = UDim2.fromOffset(sizePx, sizePx)
 	d.Position = UDim2.fromOffset(px, py)
 	d.BackgroundColor3 = color
+	d.BackgroundTransparency = transparency or 0
 	d.ZIndex = (strokeColor and 5) or 2 -- Tàu Mẹ mình nổi lên trên
 	local stroke = d:FindFirstChildOfClass("UIStroke")
 	if stroke then
 		stroke.Enabled = strokeColor ~= nil
-		if strokeColor then stroke.Color = strokeColor end
+		if strokeColor then stroke.Color = strokeColor; stroke.Transparency = transparency or 0 end
 	end
 end
 
 -------------------------------------------------------------------------------
 -- Mũi tên chỉ HƯỚNG DI CHUYỂN của Tàu Mẹ mình + báo động khi công trình bị đánh.
 -------------------------------------------------------------------------------
+-- Vòng RADAR (đường tròn quanh Tàu Mẹ mình) — cho thấy tầm quét.
+local radarRing = Instance.new("Frame")
+radarRing.AnchorPoint = Vector2.new(0.5, 0.5)
+radarRing.BackgroundColor3 = Color3.fromRGB(90, 200, 140)
+radarRing.BackgroundTransparency = 0.94
+radarRing.ZIndex = 1
+radarRing.Visible = false
+local rrc = Instance.new("UICorner"); rrc.CornerRadius = UDim.new(1, 0); rrc.Parent = radarRing
+local rrs = Instance.new("UIStroke"); rrs.Color = Color3.fromRGB(90, 210, 150); rrs.Transparency = 0.5; rrs.Thickness = 1; rrs.Parent = radarRing
+radarRing.Parent = mapFrame
+
 local arrow = Instance.new("TextLabel")
 arrow.AnchorPoint = Vector2.new(0.5, 0.5)
 arrow.Size = UDim2.fromOffset(18, 18)
@@ -256,6 +275,80 @@ local function redraw()
 				end
 			end
 		end
+	end
+
+	-- WARDEN FORTRESS (mục tiêu cuối) — LUÔN hiện (chấm to, viền vàng) dù ngoài radar.
+	local blds = Workspace:FindFirstChild("Buildings")
+	if blds then
+		for _, part in ipairs(blds:GetChildren()) do
+			if part:IsA("BasePart") and part:GetAttribute("Warden") then
+				placeDot(part.Position.X, part.Position.Z, 13, Color3.fromRGB(210, 40, 90), Color3.fromRGB(255, 210, 90))
+			end
+		end
+	end
+
+	-- ===== RADAR: lộ MỎ + SCRAP + ĐỊCH trong bán kính quanh Tàu Mẹ mình =====
+	if myShip then
+		local sp = myShip.Position
+		local now = os.clock()
+		local RADAR_RANGE = Config.MOTHERSHIP.RADAR_RANGE or 380 -- đọc SỐNG (chỉnh ⚙ ăn ngay)
+		local mapSize = testMode and TEST_MAP or Config.MAP.SIZE
+		-- vòng radar
+		local pxD = RADAR_RANGE / mapSize * FRAME * 2
+		local cx, cy = toMini(sp.X, sp.Z)
+		radarRing.Position = UDim2.fromOffset(cx, cy)
+		radarRing.Size = UDim2.fromOffset(pxD, pxD)
+		radarRing.Visible = true
+
+		-- Mỏ (ore deposit) trong tầm
+		local ores = Workspace:FindFirstChild("OreDeposits")
+		if ores then
+			for _, node in ipairs(ores:GetChildren()) do
+				if node:IsA("BasePart") and node.Name == "OreDeposit"
+					and (node.Position - sp).Magnitude <= RADAR_RANGE then
+					placeDot(node.Position.X, node.Position.Z, 5, COL_DEPOSIT, nil)
+				end
+			end
+		end
+		-- Scrap orb trong tầm (nhỏ, hơi mờ)
+		local scrap = Workspace:FindFirstChild("Scrap")
+		if scrap then
+			for _, orb in ipairs(scrap:GetChildren()) do
+				if orb:IsA("BasePart") and (orb.Position - sp).Magnitude <= RADAR_RANGE then
+					placeDot(orb.Position.X, orb.Position.Z, 3, COL_DEPOSIT, nil, 0.4)
+				end
+			end
+		end
+		-- Địch (Tàu Mẹ khác): trong tầm -> ghi nhớ; ra tầm -> giữ vết rồi MỜ DẦN -> mất.
+		if ships then
+			for _, part in ipairs(ships:GetChildren()) do
+				if part:IsA("BasePart") and part.Name:match("^Mothership_")
+					and part.Name ~= ("Mothership_" .. myId)
+					and (part.Position - sp).Magnitude <= RADAR_RANGE then
+					local m = radarMem[part] or {}
+					m.lastSeen = now
+					m.pos = part.Position
+					radarMem[part] = m
+				end
+			end
+		end
+		for part, m in pairs(radarMem) do
+			if not part.Parent then
+				radarMem[part] = nil
+			else
+				local age = now - m.lastSeen
+				if age > RADAR_FADE then
+					radarMem[part] = nil
+				else
+					local inR = (part.Position - sp).Magnitude <= RADAR_RANGE
+					local pos = inR and part.Position or m.pos
+					local trans = inR and 0 or (age / RADAR_FADE) -- ra tầm -> phai dần
+					placeDot(pos.X, pos.Z, 9, COL_ENEMY, Color3.fromRGB(255, 120, 120), trans)
+				end
+			end
+		end
+	else
+		radarRing.Visible = false
 	end
 
 	-- Ẩn các chấm thừa của lần vẽ trước

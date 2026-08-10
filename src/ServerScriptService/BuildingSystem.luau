@@ -278,6 +278,35 @@ function BuildingSystem.spawnDummy(pos, typeOverride)
 	return b
 end
 
+-- Tạo 1 công trình với STAT TUỲ Ý (dùng cho Warden Fortress: core/tháp cực khoẻ).
+-- opts: name,pos,size,color,material,hp,dmg,range,fireRate,aoe,targeting,isCore,dummy.
+function BuildingSystem.spawnCustom(ownerId, opts)
+	local part = Instance.new("Part")
+	part.Name = opts.name or "Building"
+	part.Anchored = true
+	part.CanCollide = false
+	part.Size = opts.size or Vector3.new(16, 12, 16)
+	part.Position = Vector3.new(opts.pos.X, part.Size.Y / 2, opts.pos.Z)
+	part.Color = opts.color or Color3.fromRGB(150, 60, 200)
+	part.Material = opts.material or Enum.Material.Metal
+	part:SetAttribute("OwnerUserId", ownerId)
+	if opts.isCore then part:SetAttribute("Warden", true) end -- minimap luôn hiện core
+	part.Parent = folder
+	local fill = attachHealthBar(part, part.Size.Y / 2 + 5)
+	local b = {
+		kind = "Building", buildingType = opts.name or "Building", ownerId = ownerId, tier = 1,
+		part = part, healthFill = fill,
+		hp = opts.hp or 1000, maxHp = opts.hp or 1000,
+		dmg = opts.dmg, range = opts.range, fireRate = opts.fireRate, aoe = opts.aoe or 0,
+		targeting = opts.targeting or "STANDARD", cooldown = 0,
+		projectile = opts.projectile, projSpeed = opts.projSpeed, projRadius = opts.projRadius, projColor = opts.projColor,
+		isWardenCore = opts.isCore, dummy = opts.dummy,
+	}
+	table.insert(GameState.buildings, b)
+	BuildingSystem.updateHealthBar(b)
+	return b
+end
+
 function BuildingSystem.clearAll()
 	for i = #GameState.buildings, 1, -1 do
 		local b = GameState.buildings[i]

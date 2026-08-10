@@ -124,6 +124,8 @@ function MapSystem.clearAll()
 	table.clear(GameState.oreDeposits)
 	local base = Workspace:FindFirstChild("Baseplate")
 	if base then base:Destroy() end
+	local arena = Workspace:FindFirstChild("MapArena")
+	if arena then arena:Destroy() end -- sàn 2 tông + tường ranh
 end
 
 -- Đẩy 1 vị trí ra ngoài mọi mỏ (để Tàu Mẹ/unit không đi xuyên mỏ).
@@ -203,6 +205,21 @@ function MapSystem.init()
 	container.Parent = Workspace
 
 	local made = makeOreDeposits(container)
+
+	-- TƯỜNG RANH trong suốt ở mép vùng chơi (KHÔNG có sàn — arena vẫn là không gian/nền trời).
+	local arena = Instance.new("Folder"); arena.Name = "MapArena"; arena.Parent = Workspace
+	local half, H, T = Config.MAP.SIZE / 2, 60, 3
+	local function wall(cx, cz, sx, sz)
+		local w = Instance.new("Part")
+		w.Anchored = true; w.CanCollide = false; w.CanQuery = false; w.CastShadow = false
+		w.Size = Vector3.new(sx, H, sz); w.Position = Vector3.new(cx, H / 2, cz)
+		w.Color = Color3.fromRGB(120, 200, 255); w.Material = Enum.Material.ForceField; w.Transparency = 0.3
+		w.Parent = arena
+	end
+	wall(0, -half, Config.MAP.SIZE + T, T)
+	wall(0, half, Config.MAP.SIZE + T, T)
+	wall(-half, 0, T, Config.MAP.SIZE + T)
+	wall(half, 0, T, Config.MAP.SIZE + T)
 
 	print(("[MapSystem] Map %dx%d, %d ore deposits (mỏ)"):format(
 		Config.MAP.SIZE, Config.MAP.SIZE, made))

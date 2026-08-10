@@ -47,6 +47,7 @@ add("AoE", "MOTHERSHIP.AOE")
 add("Build Channel (s)", "MOTHERSHIP.BUILD_CHANNEL")
 add("Regen delay (s)", "MOTHERSHIP.REGEN_DELAY")
 add("Regen rate (hp/s)", "MOTHERSHIP.REGEN_RATE")
+add("Radar Range", "MOTHERSHIP.RADAR_RANGE")
 
 add("— CAMERA —", nil)
 add("Height (gần/xa)", "CAMERA.HEIGHT")
@@ -348,12 +349,23 @@ local function makeFieldRow(def, order)
 	return row
 end
 
+add("— SIZE QUÂN (× cỡ, áp quân spawn mới) —", nil, "Game")
+add("Drone size", "UNIT_SIZE.Drone", "Game")
+add("Frigate size", "UNIT_SIZE.Frigate", "Game")
+add("Destroyer size", "UNIT_SIZE.Destroyer", "Game")
+add("Plasma size", "UNIT_SIZE.PlasmaCruiser", "Game")
+add("Interceptor size", "UNIT_SIZE.Interceptor", "Game")
+add("Battleship size", "UNIT_SIZE.Battleship", "Game")
+add("Siege size", "UNIT_SIZE.SiegeRailgun", "Game")
+add("Titan size", "UNIT_SIZE.Titan", "Game")
+add("Kamikaze size", "UNIT_SIZE.Kamikaze", "Game")
+
 -- Config TEST (chỉ hiện trong sandbox ⚔ Test): tinh chỉnh tầm lao của cận chiến.
-add("— CẬN CHIẾN: tầm lao (aggro) —", nil, "Test")
-add("Drone aggro", "UNITS.Drone.aggro", "Test")
-add("Destroyer aggro", "UNITS.Destroyer.aggro", "Test")
-add("Interceptor aggro", "UNITS.Interceptor.aggro", "Test")
-add("Titan aggro", "UNITS.Titan.aggro", "Test")
+add("— CẬN CHIẾN: tầm lao (aggro) —", nil, "Game")
+add("Drone aggro", "UNITS.Drone.aggro", "Game")
+add("Destroyer aggro", "UNITS.Destroyer.aggro", "Game")
+add("Interceptor aggro", "UNITS.Interceptor.aggro", "Game")
+add("Titan aggro", "UNITS.Titan.aggro", "Game")
 
 -- Tạo rows + gắn tab để lọc.
 local rows = {} -- { inst, tab }

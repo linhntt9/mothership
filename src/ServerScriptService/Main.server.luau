@@ -44,6 +44,7 @@ local CombatSystem = require(ServerScriptService.CombatSystem)
 local BotSystem = require(ServerScriptService.BotSystem)
 local GameState = require(ServerScriptService.GameState)
 local QuestSystem = require(ServerScriptService.QuestSystem)
+local WardenSystem = require(ServerScriptService.WardenSystem)
 
 -- Bọc trong pcall để 1 system lỗi không kéo sập cả game (coding standard mục 6)
 local function safeInit(name, system)
@@ -225,6 +226,9 @@ safeInit("EconomySystem", EconomySystem)
 safeInit("BuildingSystem", BuildingSystem)
 safeInit("PickupSystem", PickupSystem)
 safeInit("CombatSystem", CombatSystem)
+safeInit("WardenSystem", WardenSystem)
+CombatSystem.onWardenCore = WardenSystem.onCoreDestroyed -- hạ Warden core -> WardenSystem xử lý
+MothershipSystem.killFn = CombatSystem.killMothership -- OOB quá giờ -> Tàu Mẹ chết
 safeInit("BotSystem", BotSystem)
 safeInit("QuestSystem", QuestSystem)
 -- Quest đổi -> đánh dấu lưu (persist chung bản ghi người chơi).
@@ -267,6 +271,7 @@ local function startMatch()
 	LobbySystem.clearHall()         -- gỡ sảnh 3D
 	MatchState.set("PLAYING")
 	MapSystem.rebuild()             -- dựng lại map theo số MAP hiện tại
+	WardenSystem.spawn()            -- dựng Warden Fortress ở tâm map (end goal)
 	PickupSystem.reset()            -- rải scrap theo MAP.SIZE + PICKUP
 	MothershipSystem.respawnPlayers()
 	BotSystem.reset()               -- spawn bot

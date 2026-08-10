@@ -64,6 +64,30 @@ Remotes.SiegeCharge.OnClientEvent:Connect(function(origin, target, color, durati
 	Debris:AddItem(beam, duration + 0.05)
 end)
 
+-- Nổ lửa AoE (Kamikaze lao vào nổ): 2 lớp cầu lửa phình nhanh + mờ dần cho "đã".
+Remotes.Explosion.OnClientEvent:Connect(function(center, radius, tint)
+	if typeof(center) ~= "Vector3" then return end
+	radius = tonumber(radius) or 8
+	local core = tint and tint:Lerp(Color3.new(1, 1, 1), 0.55) or Color3.fromRGB(255, 235, 130)
+	local shell = tint or Color3.fromRGB(255, 110, 35)
+	local function burst(size0, size1, color, life, transp0)
+		local orb = Instance.new("Part")
+		orb.Anchored = true; orb.CanCollide = false; orb.CanQuery = false; orb.CastShadow = false
+		orb.Shape = Enum.PartType.Ball; orb.Material = Enum.Material.Neon
+		orb.Color = color; orb.Transparency = transp0
+		orb.Size = Vector3.new(size0, size0, size0)
+		orb.CFrame = CFrame.new(center)
+		orb.Parent = vfxFolder
+		TweenService:Create(orb, TweenInfo.new(life, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+			Size = Vector3.new(size1, size1, size1),
+			Transparency = 1,
+		}):Play()
+		Debris:AddItem(orb, life + 0.05)
+	end
+	burst(radius * 0.5, radius * 2.6, core, 0.30, 0.0)   -- lõi sáng
+	burst(radius * 1.0, radius * 3.2, shell, 0.45, 0.15) -- vỏ (màu theo đòn đánh)
+end)
+
 -- Đạn bay (Lordz): mỗi client TỰ vẽ 1 viên neon bay thẳng rồi tự huỷ. Damage/va chạm
 -- do server tính riêng -> đây chỉ là hình ảnh (fire-and-forget, không replicate chuyển động).
 Remotes.ProjectileVFX.OnClientEvent:Connect(function(origin, dir, speed, range, radius, color)

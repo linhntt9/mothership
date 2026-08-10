@@ -348,8 +348,36 @@ end
 -- bay ra khỏi nền test; trận dùng MAP.SIZE; sảnh dùng LOBBY.SIZE.
 local function moveBound()
 	if MatchState.isTest() then return Config.MAP.TEST_SIZE or 500 end
-	if MatchState.isPlaying() then return Config.MAP.SIZE end
+	-- Trận: cho bay RA NGOÀI ranh 1 khoảng OOB_MARGIN (tới tường cứng) rồi bị đếm giờ.
+	if MatchState.isPlaying() then return Config.MAP.SIZE + 2 * (Config.MAP.OOB_MARGIN or 240) end
 	return Config.LOBBY.SIZE
+end
+
+-- killFn: Main gán = CombatSystem.killMothership (tránh vòng require). Dùng khi OOB chết.
+MothershipSystem.killFn = nil
+
+-- OUT-OF-BOUNDS (chỉ trận thật): ra khỏi ranh map (MAP.SIZE/2) -> đếm ngược OOB_TIME giây;
+-- không quay về -> Tàu Mẹ CHẾT. Gửi OOBWarn cho người chơi để hiện overlay đếm giờ.
+local function updateOOB(entry)
+	local half = Config.MAP.SIZE / 2
+	local p = entry.part.Position
+	local oob = (math.abs(p.X) > half) or (math.abs(p.Z) > half)
+	local player = (not entry.isBot) and Players:GetPlayerByUserId(entry.ownerId) or nil
+	if oob then
+		entry.oobStart = entry.oobStart or os.clock()
+		local remaining = (Config.MAP.OOB_TIME or 6) - (os.clock() - entry.oobStart)
+		if remaining <= 0 then
+			entry.oobStart = nil
+			if player then Remotes.OOBWarn:FireClient(player, 0) end
+			local fn = MothershipSystem.killFn
+			if fn then task.defer(function() if entry.alive then fn(entry) end end) end -- hoãn: tránh sửa list giữa vòng
+		elseif player then
+			Remotes.OOBWarn:FireClient(player, remaining)
+		end
+	elseif entry.oobStart then
+		entry.oobStart = nil
+		if player then Remotes.OOBWarn:FireClient(player, 0) end -- đã về -> ẩn overlay
+	end
 end
 
 local function onMoveInput(player, point)
@@ -378,6 +406,7 @@ end
 -- Di chuyển 1 mothership 1 bước theo dt.
 local function stepMothership(entry, dt)
 	if not entry.alive then return end
+	if MatchState.isMatch() then updateOOB(entry) end -- đếm giờ OOB (chạy cả khi đứng yên)
 	-- Đang channel build -> khoá di chuyển (tạo "khoảnh khắc sơ hở")
 	if entry.channel then return end
 	local pos = entry.part.Position
