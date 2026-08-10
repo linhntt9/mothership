@@ -78,8 +78,87 @@ Config.LOBBY = {
 	-- CÓ THỂ trùng con đã sở hữu. Chờ hồi COOLDOWN giây giữa 2 lần mở.
 	-- (Session-only; nối DataStore ở Phase meta sau.)
 	CHEST = {
-		COOLDOWN = 30,
+		COOLDOWN = 300,   -- lượt roll MIỄN PHÍ mỗi 300s (5 phút)
+		GEM_COST = 100,   -- roll thêm bằng Gem: 100 💎/lượt (không cooldown)
 	},
+}
+
+-------------------------------------------------------------------------------
+-- GEMS (tiền để roll Tàu Mẹ). Kiếm từ: thành tích cuối trận + đăng nhập hằng ngày.
+-- Lưu bền theo player (DataStore). Roll bằng Gem xem Config.LOBBY.CHEST.GEM_COST.
+-------------------------------------------------------------------------------
+Config.GEMS = {
+	START = 150,          -- người mới có sẵn (đủ ~1 lượt roll + dư)
+	DAILY = 100,          -- quà đăng nhập mỗi ngày
+	DAILY_HOURS = 24,     -- giãn cách nhận quà (giờ)
+	-- Thưởng cuối trận (cộng khi thua/thắng, tính từ thống kê trận):
+	MATCH_BASE = 15,          -- base mỗi trận đã tham gia
+	PER_UNIT_KILL = 2,        -- mỗi unit địch diệt
+	PER_SHIP_KILL = 15,       -- mỗi Tàu Mẹ địch diệt (ngoài +1 tức thời lúc hạ)
+	PER_10S_ALIVE = 1,        -- mỗi 10 giây sống sót
+	VICTORY_BONUS = 50,       -- thắng cả trận
+}
+
+-------------------------------------------------------------------------------
+-- GIFTS (nút 🎁 ở sảnh): thang phần thưởng theo THỜI GIAN ONLINE phiên này.
+-- Mốc mở khi active-time (giây, tính từ lúc vào server) >= `at`; nhận 1 lần/phiên.
+-- kind = "scrap" (⭐) | "gem" (💎). Số lấy theo mẫu tham chiếu — chỉnh thoải mái.
+-------------------------------------------------------------------------------
+Config.GIFTS = {
+	{ at = 0,    kind = "scrap", amount = 2500 },
+	{ at = 60,   kind = "scrap", amount = 5000 },
+	{ at = 180,  kind = "gem",   amount = 1500 },
+	{ at = 360,  kind = "scrap", amount = 10000 },
+	{ at = 600,  kind = "gem",   amount = 2750 },
+	{ at = 900,  kind = "scrap", amount = 12500 },
+	{ at = 1260, kind = "scrap", amount = 25000 },
+	{ at = 1680, kind = "scrap", amount = 15000 },
+	{ at = 2160, kind = "gem",   amount = 4500 },
+	{ at = 2700, kind = "scrap", amount = 50000 },
+	{ at = 3300, kind = "gem",   amount = 7500 },
+	{ at = 3960, kind = "scrap", amount = 250000 },
+}
+
+-------------------------------------------------------------------------------
+-- QUESTS (nút Quest ở sảnh): 3 loại.
+--   • Daily  (reset 24h): active (playSecs) + engagement (kills) + co-play bạn bè.
+--   • Weekly (reset 7 ngày): thuần engagement (kills).
+--   • Unique (không reset): dựng động 1 quest / mỗi Tàu Mẹ -> khuyến khích lái hết.
+-- "kills" = SỐ TÀU MẸ ĐỊCH/BOT hạ được. Quest daily/weekly mở khoá theo chuỗi
+-- (quest sau khoá tới khi NHẬN xong quest trước). reward.kind = "scrap"|"gem".
+-- Objective type: "playSecs" | "dKills" | "wKills" | "coplay" | "killAs".
+-------------------------------------------------------------------------------
+Config.QUESTS = {
+	DAILY_RESET = 86400,     -- giây/chu kỳ daily (00:00 UTC)
+	WEEKLY_RESET = 604800,   -- giây/chu kỳ weekly
+
+	daily = {
+		{ id = "d1", name = "Daily 1",
+		  objectives = {
+			{ type = "playSecs", target = 600, label = "Chơi 10 phút" },
+			{ type = "dKills",   target = 2,   label = "Hạ 2 Tàu Mẹ" },
+		  },
+		  reward = { kind = "scrap", amount = 50000 } },
+		{ id = "d2", name = "Daily 2",
+		  objectives = { { type = "dKills", target = 4, label = "Hạ 4 Tàu Mẹ" } },
+		  reward = { kind = "gem", amount = 200 } },
+		{ id = "d3", name = "Daily 3",
+		  objectives = { { type = "coplay", target = 1, label = "Chơi 1 trận cùng bạn bè" } },
+		  reward = { kind = "gem", amount = 300 } },
+	},
+
+	weekly = {
+		{ id = "w1", name = "Weekly 1",
+		  objectives = { { type = "wKills", target = 15, label = "Hạ 15 Tàu Mẹ" } },
+		  reward = { kind = "scrap", amount = 250000 } },
+		{ id = "w2", name = "Weekly 2",
+		  objectives = { { type = "wKills", target = 40, label = "Hạ 40 Tàu Mẹ" } },
+		  reward = { kind = "gem", amount = 1000 } },
+	},
+
+	-- Unique dựng động từ HEROES: mỗi con 1 quest "Hạ N Tàu Mẹ khi lái [con đó]".
+	UNIQUE_KILL_TARGET = 20,
+	UNIQUE_REWARD = { gem = 500, scrap = 100000 },
 }
 
 -------------------------------------------------------------------------------

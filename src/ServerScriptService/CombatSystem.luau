@@ -29,6 +29,7 @@ local MothershipSystem = require(script.Parent.MothershipSystem)
 local FleetSystem = require(script.Parent.FleetSystem)
 local BuildingSystem = require(script.Parent.BuildingSystem)
 local EconomySystem = require(script.Parent.EconomySystem)
+local QuestSystem = require(script.Parent.QuestSystem)
 
 local CombatSystem = {}
 
@@ -69,6 +70,22 @@ local function statsFor(ent)
 	}
 end
 
+-- Thưởng Gem cuối trận theo thành tích (base + unit/tàu địch diệt + thời gian sống;
+-- thắng cả trận +VICTORY_BONUS). Chỉ cho người chơi. Cộng TRƯỚC khi chụp stats để
+-- bảng kết thúc hiện đúng số gem mới.
+local function awardMatchGems(ent, isVictory)
+	if ent.isBot then return end
+	local g = Config.GEMS or {}
+	local s = ent.stats or {}
+	local survived = ent.spawnTime and (os.clock() - ent.spawnTime) or 0
+	local reward = (g.MATCH_BASE or 0)
+		+ (s.unitsKilled or 0) * (g.PER_UNIT_KILL or 0)
+		+ (s.mothershipsKilled or 0) * (g.PER_SHIP_KILL or 0)
+		+ math.floor(survived / 10) * (g.PER_10S_ALIVE or 0)
+		+ (isVictory and (g.VICTORY_BONUS or 0) or 0)
+	if reward > 0 then EconomySystem.addGem(ent.ownerId, reward) end
+end
+
 -- Xử lý Tàu Mẹ chết -> loại khỏi ván + phát GameOver (kèm killer + thống kê).
 local function killMothership(ent)
 	if not ent.alive then return end
@@ -76,6 +93,7 @@ local function killMothership(ent)
 	local ownerId = ent.ownerId
 	local wasBot = ent.isBot
 	local killerName = displayName(ent.lastAttackerId)
+	awardMatchGems(ent, false) -- thưởng Gem cuối trận (thua) trước khi chụp stats
 	local deadStats = statsFor(ent)
 
 	-- Ghi công + THƯỞNG scrap cho kẻ hạ Tàu Mẹ này.
@@ -87,6 +105,7 @@ local function killMothership(ent)
 		local bounty = math.floor(EconomySystem.getScrap(ownerId) * (Config.ECONOMY.KILL_BOUNTY_RATE or 0))
 		EconomySystem.add(ent.lastAttackerId, Config.ECONOMY.MOTHERSHIP_KILL_REWARD + bounty)
 		EconomySystem.addGem(ent.lastAttackerId, Config.ECONOMY.MOTHERSHIP_KILL_GEM) -- +gem
+		QuestSystem.onMothershipKill(ent.lastAttackerId) -- tiến độ quest (daily/weekly/unique)
 		-- (thưởng scrap -> level tự lên vì level suy từ tổng scrap.)
 	end
 
@@ -120,6 +139,7 @@ local function killMothership(ent)
 				if not e.isBot then
 					local p = Players:GetPlayerByUserId(e.ownerId)
 					if p then
+						awardMatchGems(e, true) -- thưởng Gem thắng trước khi chụp stats
 						Remotes.GameOver:FireClient(p, {
 							result = "victory",
 							stats = statsFor(e),

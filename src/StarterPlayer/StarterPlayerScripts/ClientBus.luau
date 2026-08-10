@@ -24,6 +24,9 @@ ClientBus.openHeroes = Instance.new("BindableEvent")
 --   tabName: "Quân" | "Công trình" | "Tàu Mẹ" (nil = tab hiện tại).
 ClientBus.openIndex = Instance.new("BindableEvent")
 
+-- Fire() mở panel Quests (gọi từ nút sidebar "Quest" ở sảnh).
+ClientBus.openQuests = Instance.new("BindableEvent")
+
 -- (dev) Cờ hiện vị trí bot trên minimap (bật/tắt từ bảng ⚙). Minimap đọc mỗi lần vẽ.
 ClientBus.showBots = false
 

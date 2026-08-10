@@ -143,9 +143,10 @@ sideButton(leftBar, 2, "🚀", "My Ship", false, function() ClientBus.openIndex:
 sideButton(leftBar, 3, "📖", "Index", false, function() ClientBus.openIndex:Fire("Quân") end)
 sideButton(leftBar, 4, "⚔", "Test", false, function() Remotes.StartTest:FireServer() end)
 
+local openGifts -- (định nghĩa ở khối Gifts bên dưới)
 local rightBar = sideBar("right")
-sideButton(rightBar, 1, "🎁", "Gifts", true)
-sideButton(rightBar, 2, "✔", "Quest", true)
+sideButton(rightBar, 1, "🎁", "Gifts", true, function() if openGifts then openGifts() end end)
+sideButton(rightBar, 2, "✔", "Quest", true, function() ClientBus.openQuests:Fire() end)
 sideButton(rightBar, 3, "🏆", "Rank", false)
 sideButton(rightBar, 4, "🎟", "Pass", true)
 
@@ -303,30 +304,46 @@ chestReward.BackgroundTransparency = 1; chestReward.Font = Enum.Font.GothamBold;
 chestReward.TextWrapped = true; chestReward.Text = "Mở rương để roll ra Tàu Mẹ mới!"
 chestReward.TextColor3 = Color3.fromRGB(210, 220, 235); chestReward.Parent = chestPanel
 
-local chestBtn = Instance.new("TextButton")
-chestBtn.AnchorPoint = Vector2.new(0.5, 1); chestBtn.Position = UDim2.new(0.5, 0, 1, -18)
-chestBtn.Size = UDim2.new(0, 220, 0, 48); chestBtn.BackgroundColor3 = Color3.fromRGB(210, 160, 40)
-chestBtn.Font = Enum.Font.GothamBlack; chestBtn.TextSize = 18; chestBtn.Text = "MỞ RƯƠNG"
-chestBtn.TextColor3 = Color3.fromRGB(30, 24, 10); chestBtn.Parent = chestPanel
-local cbtc = Instance.new("UICorner"); cbtc.CornerRadius = UDim.new(0, 10); cbtc.Parent = chestBtn
+-- Hai nút: MIỄN PHÍ (mỗi COOLDOWN 1 lượt) & ROLL bằng Gem (tốn Gem, không chờ).
+local GEM_COST = (Config.LOBBY.CHEST and Config.LOBBY.CHEST.GEM_COST) or 100
+
+local freeBtn = Instance.new("TextButton")
+freeBtn.AnchorPoint = Vector2.new(0, 1); freeBtn.Position = UDim2.new(0, 20, 1, -18)
+freeBtn.Size = UDim2.new(0.5, -26, 0, 48)
+freeBtn.Font = Enum.Font.GothamBold; freeBtn.TextSize = 15
+freeBtn.Text = "MIỄN PHÍ"; freeBtn.TextColor3 = Color3.fromRGB(20, 40, 20)
+freeBtn.Parent = chestPanel
+local fbc = Instance.new("UICorner"); fbc.CornerRadius = UDim.new(0, 10); fbc.Parent = freeBtn
+
+local gemBtn = Instance.new("TextButton")
+gemBtn.AnchorPoint = Vector2.new(1, 1); gemBtn.Position = UDim2.new(1, -20, 1, -18)
+gemBtn.Size = UDim2.new(0.5, -26, 0, 48)
+gemBtn.Font = Enum.Font.GothamBold; gemBtn.TextSize = 15
+gemBtn.BackgroundColor3 = Color3.fromRGB(90, 150, 240); gemBtn.TextColor3 = Color3.new(1, 1, 1)
+gemBtn.Text = ("ROLL · %d 💎"):format(GEM_COST)
+gemBtn.Parent = chestPanel
+local gbc = Instance.new("UICorner"); gbc.CornerRadius = UDim.new(0, 10); gbc.Parent = gemBtn
 
 local function refreshChest()
 	if chestRemaining > 0 then
-		chestBtn.AutoButtonColor = false
-		chestBtn.BackgroundColor3 = Color3.fromRGB(70, 74, 88)
-		chestBtn.TextColor3 = Color3.fromRGB(180, 188, 205)
-		chestBtn.Text = ("Chờ hồi ⏳ %ds"):format(math.ceil(chestRemaining))
+		freeBtn.AutoButtonColor = false
+		freeBtn.BackgroundColor3 = Color3.fromRGB(70, 74, 88)
+		freeBtn.TextColor3 = Color3.fromRGB(180, 188, 205)
+		freeBtn.Text = ("MIỄN PHÍ ⏳ %ds"):format(math.ceil(chestRemaining))
 	else
-		chestBtn.AutoButtonColor = true
-		chestBtn.BackgroundColor3 = Color3.fromRGB(210, 160, 40)
-		chestBtn.TextColor3 = Color3.fromRGB(30, 24, 10)
-		chestBtn.Text = "MỞ RƯƠNG"
+		freeBtn.AutoButtonColor = true
+		freeBtn.BackgroundColor3 = Color3.fromRGB(120, 210, 120)
+		freeBtn.TextColor3 = Color3.fromRGB(20, 40, 20)
+		freeBtn.Text = "MIỄN PHÍ ✓"
 	end
 end
 
-chestBtn.Activated:Connect(function()
+freeBtn.Activated:Connect(function()
 	if chestRemaining > 0 then return end
-	Remotes.OpenChest:FireServer()
+	Remotes.OpenChest:FireServer("free")
+end)
+gemBtn.Activated:Connect(function()
+	Remotes.OpenChest:FireServer("gem")
 end)
 
 -- Hiệu ứng GACHA: orb quay hồi hộp -> flash màu rarity -> thẻ Tàu Mẹ bật ra.
@@ -441,22 +458,178 @@ local function playGachaReveal(reward)
 	end)
 end
 
--- Server trả kết quả mở rương: (ok, reward{isNew,name,rarity,color}|nil, cooldown).
-Remotes.OpenChest.OnClientEvent:Connect(function(ok, reward, cooldown)
-	chestRemaining = cooldown or 0
+-- Server trả kết quả: (ok, reward{isNew,name,rarity,color}|nil, freeRemaining, reason).
+-- reason = "playing" | "cooldown" | "nogem".
+Remotes.OpenChest.OnClientEvent:Connect(function(ok, reward, freeLeft, reason)
+	chestRemaining = freeLeft or 0
 	if ok and reward then
 		playGachaReveal(reward) -- hiệu ứng gacha
 		if reward.isNew then
-			chestReward.Text = ("🚀 TÀU MẸ MỚI!\n%s\n(%s)"):format(reward.name, reward.rarity or "")
+			chestReward.Text = ("🚀 TÀU MẸ MỚI!\n%s (%s)"):format(reward.name, reward.rarity or "")
 		else
-			chestReward.Text = ("Trùng: %s\n(đã sở hữu — chờ con mới)"):format(reward.name)
+			chestReward.Text = ("Trùng: %s (đã sở hữu)"):format(reward.name)
 		end
 		chestReward.TextColor3 = reward.color or CHEST_GOLD
-	elseif not ok and (cooldown or 0) > 0 then
-		chestReward.Text = "Rương đang hồi. Quay lại sau nhé!"
+	elseif reason == "nogem" then
+		chestReward.Text = ("Không đủ Gem (cần %d 💎)"):format(GEM_COST)
+		chestReward.TextColor3 = Color3.fromRGB(255, 170, 170)
+	elseif reason == "cooldown" then
+		chestReward.Text = "Lượt free đang hồi — dùng Gem để roll ngay!"
 		chestReward.TextColor3 = Color3.fromRGB(210, 220, 235)
 	end
 	refreshChest()
+end)
+
+-------------------------------------------------------------------------------
+-- GIFTS: thang thưởng theo THỜI GIAN ONLINE phiên (nút 🎁). Mốc chưa tới -> tối
+-- + 🔒 + đếm ngược; tới mốc -> sáng, bấm nhận (server xác thực & chống trùng).
+-------------------------------------------------------------------------------
+local GIFTS = Config.GIFTS or {}
+local giftClaimed = {}          -- [index]=true (đã nhận trong phiên)
+local giftStart = os.clock()    -- mốc client tính active-time (~lúc vào)
+local function activeTime() return os.clock() - giftStart end
+
+local function comma(n)
+	local s = tostring(math.floor(n))
+	s = s:reverse():gsub("(%d%d%d)", "%1,"):reverse():gsub("^,", "")
+	return s
+end
+local function fmtTime(sec)
+	sec = math.max(0, math.floor(sec))
+	local h = math.floor(sec / 3600)
+	local m = math.floor((sec % 3600) / 60)
+	local s = sec % 60
+	if h > 0 then return ("%d:%02d:%02d"):format(h, m, s) end
+	return ("%d:%02d"):format(m, s)
+end
+
+local giftsGui = Instance.new("Frame")
+giftsGui.Size = UDim2.new(1, 0, 1, 0); giftsGui.BackgroundColor3 = Color3.new(0, 0, 0)
+giftsGui.BackgroundTransparency = 0.45; giftsGui.Visible = false; giftsGui.ZIndex = 60; giftsGui.Parent = gui
+local giftsDim = Instance.new("TextButton") -- bấm nền để đóng
+giftsDim.Size = UDim2.new(1, 0, 1, 0); giftsDim.BackgroundTransparency = 1; giftsDim.Text = ""
+giftsDim.AutoButtonColor = false; giftsDim.ZIndex = 60; giftsDim.Parent = giftsGui
+
+local giftPanel = Instance.new("Frame")
+giftPanel.AnchorPoint = Vector2.new(0.5, 0.5); giftPanel.Position = UDim2.new(0.5, 0, 0.5, 0)
+giftPanel.Size = UDim2.new(0, 636, 0, 520); giftPanel.BackgroundColor3 = PANEL_BG
+giftPanel.ZIndex = 61; giftPanel.Parent = giftsGui
+local gpc = Instance.new("UICorner"); gpc.CornerRadius = UDim.new(0, 18); gpc.Parent = giftPanel
+local gps = Instance.new("UIStroke"); gps.Thickness = 2; gps.Color = Color3.fromRGB(90, 180, 255); gps.Transparency = 0.4; gps.Parent = giftPanel
+
+local giftTitle = Instance.new("TextLabel")
+giftTitle.Position = UDim2.new(0, 0, 0, 14); giftTitle.Size = UDim2.new(1, 0, 0, 34)
+giftTitle.BackgroundTransparency = 1; giftTitle.Font = Enum.Font.GothamBlack; giftTitle.TextSize = 26
+giftTitle.Text = "🎁 GIFTS"; giftTitle.TextColor3 = Color3.fromRGB(120, 200, 255); giftTitle.ZIndex = 62
+giftTitle.Parent = giftPanel
+local giftSub = Instance.new("TextLabel")
+giftSub.Position = UDim2.new(0, 0, 0, 44); giftSub.Size = UDim2.new(1, 0, 0, 18)
+giftSub.BackgroundTransparency = 1; giftSub.Font = Enum.Font.Gotham; giftSub.TextSize = 13
+giftSub.Text = "Phần thưởng mở dần theo thời gian online phiên này."
+giftSub.TextColor3 = Color3.fromRGB(170, 180, 200); giftSub.ZIndex = 62; giftSub.Parent = giftPanel
+
+local giftClose = Instance.new("TextButton")
+giftClose.AnchorPoint = Vector2.new(1, 0); giftClose.Position = UDim2.new(1, -12, 0, 12)
+giftClose.Size = UDim2.new(0, 30, 0, 30); giftClose.BackgroundColor3 = Color3.fromRGB(200, 60, 60)
+giftClose.Text = "✕"; giftClose.Font = Enum.Font.GothamBold; giftClose.TextSize = 16
+giftClose.TextColor3 = Color3.new(1, 1, 1); giftClose.ZIndex = 63; giftClose.Parent = giftPanel
+local gcc = Instance.new("UICorner"); gcc.CornerRadius = UDim.new(0, 8); gcc.Parent = giftClose
+
+local giftGrid = Instance.new("Frame")
+giftGrid.Position = UDim2.new(0, 20, 0, 74); giftGrid.Size = UDim2.new(1, -40, 1, -90)
+giftGrid.BackgroundTransparency = 1; giftGrid.ZIndex = 61; giftGrid.Parent = giftPanel
+local grid = Instance.new("UIGridLayout")
+grid.CellSize = UDim2.new(0, 138, 0, 138); grid.CellPadding = UDim2.new(0, 10, 0, 10)
+grid.SortOrder = Enum.SortOrder.LayoutOrder; grid.Parent = giftGrid
+
+-- Dựng 12 ô quà
+local giftTiles = {}
+for i, g in ipairs(GIFTS) do
+	local isGem = (g.kind == "gem")
+	local tile = Instance.new("TextButton")
+	tile.LayoutOrder = i; tile.Text = ""; tile.AutoButtonColor = false
+	tile.BackgroundColor3 = Color3.fromRGB(40, 90, 150); tile.ZIndex = 62; tile.Parent = giftGrid
+	local tc = Instance.new("UICorner"); tc.CornerRadius = UDim.new(0, 12); tc.Parent = tile
+	local tsk = Instance.new("UIStroke"); tsk.Thickness = 1.5; tsk.Transparency = 0.4
+	tsk.Color = Color3.fromRGB(80, 140, 210); tsk.Parent = tile
+
+	local icon = Instance.new("TextLabel")
+	icon.AnchorPoint = Vector2.new(0.5, 0); icon.Position = UDim2.new(0.5, 0, 0, 14)
+	icon.Size = UDim2.new(0, 74, 0, 74); icon.BackgroundTransparency = 1; icon.TextScaled = true
+	icon.Font = Enum.Font.GothamBold; icon.Text = isGem and "💎" or "◈"
+	icon.TextColor3 = isGem and Color3.fromRGB(150, 230, 255) or Color3.fromRGB(255, 220, 120)
+	icon.ZIndex = 63; icon.Parent = tile
+
+	local amt = Instance.new("TextLabel")
+	amt.AnchorPoint = Vector2.new(0.5, 1); amt.Position = UDim2.new(0.5, 0, 1, -10)
+	amt.Size = UDim2.new(1, -8, 0, 24); amt.BackgroundTransparency = 1; amt.Font = Enum.Font.GothamBlack
+	amt.TextSize = 18; amt.Text = "+" .. comma(g.amount)
+	amt.TextColor3 = Color3.new(1, 1, 1); amt.ZIndex = 63; amt.Parent = tile
+
+	local lock = Instance.new("TextLabel")
+	lock.Position = UDim2.new(0, 6, 0, 4); lock.Size = UDim2.new(0, 22, 0, 22)
+	lock.BackgroundTransparency = 1; lock.Font = Enum.Font.GothamBold; lock.TextSize = 18
+	lock.Text = "🔒"; lock.TextColor3 = Color3.fromRGB(255, 210, 90); lock.ZIndex = 64; lock.Parent = tile
+
+	local timer = Instance.new("TextLabel")
+	timer.AnchorPoint = Vector2.new(1, 0); timer.Position = UDim2.new(1, -6, 0, 4)
+	timer.Size = UDim2.new(0, 80, 0, 20); timer.BackgroundTransparency = 1
+	timer.Font = Enum.Font.GothamBold; timer.TextSize = 15; timer.TextXAlignment = Enum.TextXAlignment.Right
+	timer.Text = ""; timer.TextColor3 = Color3.new(1, 1, 1); timer.ZIndex = 64; timer.Parent = tile
+
+	tile.Activated:Connect(function()
+		if giftClaimed[i] then return end
+		if activeTime() < g.at then return end -- chưa tới mốc (server cũng chặn)
+		Remotes.ClaimGift:FireServer(i)
+	end)
+
+	giftTiles[i] = { tile = tile, icon = icon, amt = amt, lock = lock, timer = timer, stroke = tsk, gift = g }
+end
+
+local function refreshGifts()
+	local now = activeTime()
+	for i, t in ipairs(giftTiles) do
+		local g = t.gift
+		if giftClaimed[i] then
+			-- ĐÃ NHẬN: xanh lá + dấu ✓
+			t.tile.BackgroundColor3 = Color3.fromRGB(50, 110, 60)
+			t.stroke.Color = Color3.fromRGB(120, 220, 130)
+			t.lock.Visible = false; t.timer.Text = "✓"; t.timer.TextColor3 = Color3.fromRGB(150, 255, 160)
+			t.icon.TextTransparency = 0.3; t.amt.TextTransparency = 0.3
+		elseif now >= g.at then
+			-- SẴN SÀNG: sáng
+			t.tile.BackgroundColor3 = Color3.fromRGB(45, 130, 210)
+			t.stroke.Color = Color3.fromRGB(150, 210, 255)
+			t.lock.Visible = false; t.timer.Text = "NHẬN"; t.timer.TextColor3 = Color3.fromRGB(200, 255, 210)
+			t.icon.TextTransparency = 0; t.amt.TextTransparency = 0
+		else
+			-- KHÓA: tối + 🔒 + đếm ngược
+			t.tile.BackgroundColor3 = Color3.fromRGB(34, 46, 64)
+			t.stroke.Color = Color3.fromRGB(60, 74, 100)
+			t.lock.Visible = true
+			t.timer.Text = fmtTime(g.at - now); t.timer.TextColor3 = Color3.fromRGB(230, 236, 250)
+			t.icon.TextTransparency = 0.55; t.amt.TextTransparency = 0.4
+		end
+	end
+end
+
+openGifts = function()
+	refreshGifts()
+	giftsGui.Visible = true
+end
+local function closeGifts() giftsGui.Visible = false end
+giftClose.Activated:Connect(closeGifts)
+giftsDim.Activated:Connect(closeGifts)
+
+-- Server trả kết quả nhận quà.
+Remotes.ClaimGift.OnClientEvent:Connect(function(index, ok, kind, amount)
+	if ok then
+		giftClaimed[index] = true
+		showToast(("Đã nhận +%s %s"):format(comma(amount), kind == "gem" and "💎" or "◈ Scrap"))
+	else
+		showToast("Chưa tới lúc nhận quà này")
+	end
+	if giftsGui.Visible then refreshGifts() end
 end)
 
 -------------------------------------------------------------------------------
@@ -514,6 +687,7 @@ RunService.RenderStepped:Connect(function(dt)
 	acc += dt
 	if acc < 0.1 then return end
 	acc = 0
+	if giftsGui.Visible then refreshGifts() end -- cập nhật đếm ngược quà
 	local ship = myShip()
 	if ship then applyZone(zoneAt(ship.Position)) end
 end)
