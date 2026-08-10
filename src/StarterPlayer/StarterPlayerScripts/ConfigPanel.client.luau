@@ -348,6 +348,13 @@ local function makeFieldRow(def, order)
 	return row
 end
 
+-- Config TEST (chỉ hiện trong sandbox ⚔ Test): tinh chỉnh tầm lao của cận chiến.
+add("— CẬN CHIẾN: tầm lao (aggro) —", nil, "Test")
+add("Drone aggro", "UNITS.Drone.aggro", "Test")
+add("Destroyer aggro", "UNITS.Destroyer.aggro", "Test")
+add("Interceptor aggro", "UNITS.Interceptor.aggro", "Test")
+add("Titan aggro", "UNITS.Titan.aggro", "Test")
+
 -- Tạo rows + gắn tab để lọc.
 local rows = {} -- { inst, tab }
 for i, def in ipairs(tunables) do
@@ -369,8 +376,9 @@ setTab("Game")
 -- Lọc UI theo SANDBOX test: ẩn nút/bảng config của trận thật, chỉ chừa hàng test.
 local function applyTestFilter(isTest)
 	for _, b in ipairs(matchOnly) do b.Visible = not isTest end
-	tabBar.Visible = not isTest
-	scroll.Visible = not isTest
+	tabBar.Visible = not isTest              -- test: ẩn tab trận (chỉ còn field test)
+	scroll.Visible = true                    -- luôn hiện vùng field
+	setTab(isTest and "Test" or "Game")      -- test -> field aggro; thường -> tab Game
 end
 Remotes.TestState.OnClientEvent:Connect(applyTestFilter)
 

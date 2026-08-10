@@ -18,6 +18,7 @@ local Config = {}
 -------------------------------------------------------------------------------
 Config.MAP = {
 	SIZE = 2500,              -- baseplate 2500 x 2500 studs, tâm ở (0,0) — map lớn (x5 so với proto 500)
+	TEST_SIZE = 500,          -- ranh giới di chuyển trong sandbox Test (nền phẳng ~500)
 	-- MỎ (ore deposit): nơi DUY NHẤT đặt được Scrap Mine. Có hình dạng riêng
 	-- (tinh thể phát sáng) để phân biệt với mặt đất trống (chỗ đặt Hub).
 	ORE_DEPOSIT_COUNT = 24,    -- nhiều mỏ cho map lớn 2500 (proto 500 dùng 5)
@@ -131,9 +132,10 @@ Config.FLEET = {
 	-- Đội hình NHIỀU VÒNG ĐỒNG TÂM nở dần ra ngoài (nhìn đồ sộ như Lordz).
 	-- Xếp tank ở trong, drone ở ngoài; mỗi vòng chứa nhiều unit theo chu vi,
 	-- đầy thì nở ra vòng kế tiếp.
-	INNER_RADIUS = 20,     -- bán kính vòng trong cùng (studs) — chừa chỗ cho thân+deco Tàu Mẹ
-	RING_GAP = 8,          -- khoảng cách giữa 2 vòng đồng tâm (giãn -> trải rộng)
-	UNIT_SPACING = 6,      -- khoảng cách cung giữa 2 unit trong 1 vòng
+	INNER_RADIUS = 20,     -- (cũ, vòng tròn) — giờ đội hình dùng HEX packing bên dưới
+	RING_GAP = 8,          -- (cũ) không còn dùng cho hex
+	UNIT_SPACING = 6,      -- (cũ) không còn dùng cho hex
+	HEX_SPACING = 11,      -- LỤC GIÁC: khoảng cách tâm-tâm giữa 2 unit kề nhau (giữ gap đều)
 	RING_MIN_SLOTS = 6,    -- số slot tối thiểu mỗi vòng
 	RING_MAX_SLOTS = 16,   -- số slot TỐI ĐA mỗi vòng: đầy là nở vòng mới -> trải rộng ra xa
 
@@ -145,10 +147,19 @@ Config.FLEET = {
 	-- vị trí của nó; C-1 cụm "vệ tinh" (KHÔNG có Vua) TỰ CHASE con trỏ theo mô hình
 	-- multi-vector attraction — funnel (gần con trỏ thì chụm), slingshot (quán tính ->
 	-- cụm nhanh vọt qua rồi lượn), angular deflection (đẩy nhau khi quá sát).
-	-- Ngừng bấm SPLIT_REJOIN_DELAY giây -> tự gộp dần, vệ tinh hút về Vua rồi hoà lại.
-	SPLIT_MAX_LEVEL      = 4,   -- 2^4 = 16 cụm tối đa
-	SPLIT_REJOIN_DELAY   = 3.0, -- giây sau lần split cuối mới bắt đầu tự gộp
-	SPLIT_REJOIN_STEP    = 0.6, -- giây giữa 2 bậc gộp (16→8→4→2→1)
+	-- Ngừng bấm hết cooldown (động) -> tự gộp dần, vệ tinh hút về Vua rồi hoà lại.
+	SPLIT_MAX_LEVEL      = 2,   -- (cũ, không còn dùng) — split giờ LUÔN tách 2 đội
+	SPLIT_FIXED_DIST     = 65,  -- khoảng cách CỐ ĐỊNH giữa 2 đội khi split (lúc không target)
+	SPLIT_TARGET_MAX     = 200, -- khi TARGET mục tiêu: đội 2 phóng tối đa xa bấy nhiêu về phía đó
+	SPLIT_OFFSET_SPEED   = 240, -- tốc độ đội 2 trượt tới vị trí (studs/s, cho mượt)
+	-- Rejoin cooldown ĐỘNG (Lordz): thời gian GIỮ split = BASE + cấp split (stacking 2^n)
+	-- + quy mô quân. Hết cooldown mới bắt đầu gộp; đứng yên gộp nhanh, đang chạy gộp chậm.
+	SPLIT_REJOIN_BASE        = 6,    -- giây giữ tối thiểu (lần split đầu)
+	SPLIT_REJOIN_PER_LEVEL   = 3,    -- +giây cho MỖI cấp split thêm (2→4→8→16)
+	SPLIT_REJOIN_PER_UNIT    = 0.04, -- +giây theo MỖI unit (quân đông giữ split lâu hơn)
+	SPLIT_REJOIN_MAX         = 30,   -- trần giây
+	SPLIT_REJOIN_STEP        = 0.5,  -- (ĐỨNG YÊN) giây/bậc gộp -> gom nhanh (~1-2s)
+	SPLIT_REJOIN_STEP_MOVING = 1.4,  -- (ĐANG CHẠY) giây/bậc gộp -> gom chậm (rượt đuôi)
 	-- Giữ SPLIT DÀY ĐẶC (không toả mỏng/hở giữa): cụm bám SÁT nhau + gần Vua.
 	SPLIT_SAT_SPREAD     = 10,  -- độ giãn lane vệ tinh (nhỏ = cụm chụm, đặc)
 	SPLIT_SAT_FUNNEL     = 40,  -- khoảng funnel co lane về 0
@@ -181,7 +192,7 @@ Config.UNITS = {
 		cost = 15, hp = 40, dmg = 6, range = 6, fireRate = 2.0, speed = 62,
 		ring = "SCREEN", weight = 1, aoeRadius = 0, maxCount = 200,
 		attack = "COLLISION", targeting = "STANDARD",
-		melee = true, aggro = 170, -- (Lordz) Soldier cận chiến: bầy lao vào đánh áp sát
+		melee = true, aggro = 100, -- (Lordz) Soldier cận chiến; aggro = tầm engage tính TỪ TÀU MẸ
 	},
 	Frigate = { -- Archer
 		displayName = "Frigate",
@@ -189,13 +200,14 @@ Config.UNITS = {
 		ring = "CORE", weight = 2, aoeRadius = 0, maxCount = 200,
 		attack = "HITSCAN", targeting = "STANDARD",
 		projectile = true, projSpeed = 95, projRadius = 1.6, -- (Lordz) bắn TÊN bay, trúng địch đầu tiên
+		projColor = Color3.fromRGB(255, 60, 60), -- tên Frigate màu ĐỎ
 	},
 	Destroyer = { -- Barbarian (canon không nêu số -> ước lượng)
 		displayName = "Destroyer",
 		cost = 200, hp = 600, dmg = 30, range = 8, fireRate = 0.8, speed = 42,
 		ring = "GUARD", weight = 3, aoeRadius = 0, maxCount = 100,
 		attack = "COLLISION", targeting = "STANDARD",
-		melee = true, aggro = 180, -- (Lordz) CẬN CHIẾN: lao vào địch trong tầm aggro, đánh áp sát
+		melee = true, aggro = 110, -- (Lordz) CẬN CHIẾN; aggro = tầm engage từ Tàu Mẹ
 	},
 	PlasmaCruiser = { -- Mage
 		displayName = "Plasma",
@@ -210,14 +222,15 @@ Config.UNITS = {
 		cost = 75, hp = 90, dmg = 14, range = 7, fireRate = 1.6, speed = 88,
 		ring = "SCREEN", weight = 2, aoeRadius = 0, maxCount = 200,
 		attack = "COLLISION", targeting = "STANDARD",
-		melee = true, aggro = 200, -- (Lordz) kỵ binh cận chiến: lao NHANH, phát hiện xa
+		melee = true, aggro = 130, -- (Lordz) kỵ binh: lao nhanh, tầm engage từ Tàu Mẹ hơi xa hơn
 	},
-	Battleship = { -- Dragon (bắn CỤM LASER)
+	Battleship = { -- Dragon (BLAST năng lượng NẶNG: đạn chậm, bay xa, nổ AoE lớn)
 		displayName = "Battleship",
-		cost = 2500, hp = 900, dmg = 60, range = 42, fireRate = 0.35, speed = 24,
-		ring = "GUARD", weight = 15, aoeRadius = 0, maxCount = 66,
-		attack = "HITSCAN", targeting = "VOLLEY", -- bắn 1 CỤM laser vào nhiều địch; nhịp GIÃN
-		volleyCount = 8, -- số tia laser mỗi lượt bắn
+		cost = 2500, hp = 900, dmg = 75, range = 85, fireRate = 0.28, speed = 24,
+		ring = "GUARD", weight = 15, aoeRadius = 26, maxCount = 66,
+		attack = "HITSCAN", targeting = "STANDARD",
+		projectile = true, projSpeed = 36, projRadius = 5, -- đạn CHẬM + TO -> cảm giác nặng
+		projColor = Color3.fromRGB(225, 70, 240), -- tím năng lượng
 	},
 	-- Bước 2 — pháo công thành: CHỈ bắn Building, tầm xa nhất, bắn chậm có nạp đạn.
 	SiegeRailgun = { -- Ballista
@@ -234,7 +247,7 @@ Config.UNITS = {
 		cost = 3000, hp = 700, dmg = 40, range = 10, fireRate = 0.5, speed = 30,
 		ring = "GUARD", weight = 15, aoeRadius = 0, maxCount = 5,
 		attack = "COLLISION", targeting = "STANDARD", special = "GRAVITY_STUN",
-		melee = true, aggro = 160, -- (Lordz) Troll cận chiến (vẫn phát sóng xung STUN quanh mình)
+		melee = true, aggro = 90, -- (Lordz) Troll; aggro engage từ Tàu Mẹ (vẫn phát sóng xung STUN)
 		stunRadius = 18,    -- bán kính sóng xung
 		stunDuration = 1.5, -- giây địch không bắn được (refresh, không cộng dồn)
 		pushStrength = 10,  -- studs đẩy lệch khỏi slot (rồi lerp về, không teleport)

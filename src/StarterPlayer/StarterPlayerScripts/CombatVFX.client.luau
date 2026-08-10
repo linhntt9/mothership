@@ -77,7 +77,7 @@ Remotes.ProjectileVFX.OnClientEvent:Connect(function(origin, dir, speed, range, 
 	p.Anchored = true; p.CanCollide = false; p.CanQuery = false; p.CastShadow = false
 	p.Material = Enum.Material.Neon
 	p.Color = color or Color3.new(1, 1, 1)
-	p.Size = Vector3.new(radius * 1.1, radius * 1.1, math.max(radius * 2.5, 3))
+	p.Size = Vector3.new(radius * 1.3, radius * 1.3, math.max(radius * 1.9, 3)) -- to -> orb nặng
 	p.CFrame = CFrame.lookAt(origin, origin + dir)
 	p.Parent = vfxFolder
 	local endPos = origin + dir * range
@@ -99,30 +99,37 @@ Remotes.ProjectileVFX.OnClientEvent:Connect(function(origin, dir, speed, range, 
 	end)
 end)
 
--- Nón lửa Dragon (Battleship): quạt nhiều tia cam toả trong góc rồi mờ nhanh.
+-- BLAST vòng cung (Battleship): sóng năng lượng hình LƯỠI LIỀM bung ra trước mặt rồi
+-- lan tới tầm range, phình to + mờ dần (to ở tâm cung, nhỏ ra mép -> dáng crescent).
 Remotes.ConeBlast.OnClientEvent:Connect(function(origin, dir, range, angle, color)
-	if typeof(origin) ~= "Vector3" or typeof(dir) ~= "Vector3" then return end
-	if dir.Magnitude < 1e-3 then return end
-	range = tonumber(range) or 34
-	angle = tonumber(angle) or 1.05
+	if typeof(origin) ~= "Vector3" or typeof(dir) ~= "Vector3" or dir.Magnitude < 1e-3 then return end
+	dir = dir.Unit
+	range = tonumber(range) or 42
+	angle = tonumber(angle) or 1.2
 	local baseAng = math.atan2(dir.Z, dir.X)
-	local col = color or Color3.fromRGB(255, 150, 40)
-	local N = 9
-	for i = 0, N - 1 do
-		local frac = (N == 1) and 0 or (i / (N - 1) - 0.5)
+	local col = color or Color3.fromRGB(225, 70, 240)
+	local startR = 8
+	local M = 13
+	for i = 0, M - 1 do
+		local frac = (M == 1) and 0 or (i / (M - 1) - 0.5) -- -0.5..0.5 dọc cung
 		local a = baseAng + frac * angle
 		local d = Vector3.new(math.cos(a), 0, math.sin(a))
-		local len = range * (i % 2 == 0 and 1 or 0.82) -- mép so le cho có "lưỡi lửa"
-		local beam = Instance.new("Part")
-		beam.Anchored = true; beam.CanCollide = false; beam.CanQuery = false; beam.CastShadow = false
-		beam.Material = Enum.Material.Neon
-		beam.Color = col
-		beam.Transparency = 0.25
-		beam.Size = Vector3.new(0.7, 0.7, len)
-		beam.CFrame = CFrame.lookAt(origin + d * (len / 2), origin + d * len)
-		beam.Parent = vfxFolder
-		TweenService:Create(beam, TweenInfo.new(0.22), { Transparency = 1, Size = Vector3.new(1.6, 1.6, len) }):Play()
-		Debris:AddItem(beam, 0.26)
+		local w = 3 + 7 * (1 - math.min(1, math.abs(frac) * 2)) -- to ở tâm, nhỏ ở mép
+		local ball = Instance.new("Part")
+		ball.Anchored = true; ball.CanCollide = false; ball.CanQuery = false; ball.CastShadow = false
+		ball.Shape = Enum.PartType.Ball
+		ball.Material = Enum.Material.Neon
+		ball.Color = col
+		ball.Transparency = 0.1
+		ball.Size = Vector3.new(w, w, w)
+		ball.CFrame = CFrame.new(origin + d * startR)
+		ball.Parent = vfxFolder
+		TweenService:Create(ball, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+			CFrame = CFrame.new(origin + d * range),
+			Size = Vector3.new(w * 1.8, w * 1.8, w * 1.8),
+			Transparency = 1,
+		}):Play()
+		Debris:AddItem(ball, 0.34)
 	end
 end)
 

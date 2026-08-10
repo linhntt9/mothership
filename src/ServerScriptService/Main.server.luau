@@ -167,40 +167,82 @@ local function enterLobby()
 	print("[Main] Vào lobby.")
 end
 
--- ── SANDBOX TEST COMBAT (nơi RIÊNG, không chung arena) ───────────────────────
--- Nền phẳng riêng + Tàu Mẹ người chơi 1 bên + "địch bù nhìn" (mothership tĩnh, id
--- âm, KHÔNG có AI) bên kia. Không bot/kinh tế/scrap/thắng-thua. Dev bơm quân free
--- cho 2 phe rồi lái vào xem combat.
+-- ── SANDBOX TEST COMBAT (nơi RIÊNG) ──────────────────────────────────────────
+-- Nền phẳng riêng + Tàu Mẹ người chơi + CÔNG TRÌNH bù nhìn (phá được -> NỔ + respawn
+-- CHỖ KHÁC) + 1 TÀU MẸ bù nhìn (tĩnh, không đánh trả). Không bot/kinh tế.
+local TEST_MS_ID = -998     -- id Tàu Mẹ bù nhìn (khác -999 của công trình)
+local TEST_BLD_TARGET = 12  -- số công trình bù nhìn luôn giữ trong sân
+local testGen = 0           -- token tránh vòng maintain cũ chạy chồng
+
+-- Điểm ngẫu nhiên trong vùng test (chừa lề để không sát biên).
+local function testAreaPoint()
+	local h = (Config.MAP.TEST_SIZE or 500) / 2 - 40
+	return Vector3.new((math.random() - 0.5) * 2 * h, 0, (math.random() - 0.5) * 2 * h)
+end
+
+-- Tàu Mẹ bù nhìn: tĩnh, không AI, không bắn (cờ dummy) -> đích tập bắn cả Tàu Mẹ.
+local function spawnTestMothership()
+	local e = MothershipSystem.spawn(TEST_MS_ID, false, Vector3.new(0, Config.MOTHERSHIP.RADIUS, 150), Config.TEAM.ENEMY)
+	if e then
+		e.dummy = true
+		if e.part then e.part:SetAttribute("Dummy", true) end
+	end
+end
+
+-- Vòng DUY TRÌ sandbox: bù công trình bị phá (respawn CHỖ KHÁC) + hồi sinh Tàu Mẹ bù nhìn.
+local function maintainTest(gen)
+	task.spawn(function()
+		while MatchState.isTest() and testGen == gen do
+			task.wait(1.2)
+			if not (MatchState.isTest() and testGen == gen) then break end
+			local n = 0
+			for _, b in ipairs(GameState.buildings) do
+				if b.dummy then n += 1 end
+			end
+			for _ = 1, math.max(0, TEST_BLD_TARGET - n) do
+				BuildingSystem.spawnDummy(testAreaPoint())
+			end
+			if not GameState.motherships[TEST_MS_ID] then
+				spawnTestMothership()
+			end
+		end
+	end)
+end
+
 local function startTest()
 	clearMatch()
 	LobbySystem.clearHall()
-	MapSystem.clearAll()            -- gỡ arena nếu có (test KHÔNG dùng map thật)
+	MapSystem.clearAll()
 	MatchState.set("TEST")
+	testGen += 1
 
 	testGround = Instance.new("Part")
 	testGround.Name = "TestGround"
 	testGround.Anchored = true
 	testGround.CanCollide = false
-	testGround.Size = Vector3.new(520, 2, 520)
+	local gs = (Config.MAP.TEST_SIZE or 500) + 40
+	testGround.Size = Vector3.new(gs, 2, gs)
 	testGround.Position = Vector3.new(0, -1, 0)
 	testGround.Color = Color3.fromRGB(38, 42, 52)
 	testGround.Material = Enum.Material.SmoothPlastic
 	testGround.Parent = workspace
 
 	local R = Config.MOTHERSHIP.RADIUS
-	for _, p in ipairs(Players:GetPlayers()) do -- người chơi 1 bên
-		MothershipSystem.spawn(p.UserId, false, Vector3.new(0, R, -90), Config.TEAM.PLAYER)
-		EconomySystem.setScrap(p.UserId, 1000000) -- test: 1M scrap để mua thoải mái
+	for _, p in ipairs(Players:GetPlayers()) do
+		MothershipSystem.spawn(p.UserId, false, Vector3.new(0, R, -120), Config.TEAM.PLAYER)
+		EconomySystem.setScrap(p.UserId, 1000000)
 	end
-	-- Nhiều BÙ NHÌN tĩnh (bất tử, KHÔNG bắn) rải phía trước -> quân xả đạn thoải mái.
-	for i = 1, 16 do
+	-- Công trình bù nhìn ban đầu (grid); về sau maintainTest respawn cái bị phá.
+	for i = 1, TEST_BLD_TARGET do
 		local col = (i - 1) % 4
 		local rowi = math.floor((i - 1) / 4)
-		FleetSystem.spawnDummy(Vector3.new((col - 1.5) * 30, R, 70 + rowi * 26))
+		BuildingSystem.spawnDummy(Vector3.new((col - 1.5) * 55, 0, 20 + rowi * 55))
 	end
+	spawnTestMothership()
+	maintainTest(testGen)
 
 	broadcastState()
-	Remotes.TestState:FireAllClients(true) -- client lọc UI/minimap theo sandbox
+	Remotes.TestState:FireAllClients(true)
 	print("[Main] Vào SANDBOX Test Combat.")
 end
 
@@ -209,8 +251,13 @@ local function onTestSpawn(player, side)
 	if not MatchState.isTest() then return end
 	local R = Config.MOTHERSHIP.RADIUS
 	if side == "dummy" then
-		for _ = 1, 8 do
-			FleetSystem.spawnDummy(Vector3.new((math.random() - 0.5) * 170, R, 60 + math.random() * 130))
+		-- Dummy MỚI xuất hiện NGAY GẦN người chơi (lưới nhỏ trước mũi Tàu Mẹ), giãn xa nhau.
+		local ms = GameState.motherships[player.UserId]
+		local base = (ms and ms.part) and ms.part.Position or Vector3.new(0, 0, 0)
+		for i = 1, 8 do
+			local col = (i - 1) % 4
+			local rowi = math.floor((i - 1) / 4)
+			BuildingSystem.spawnDummy(Vector3.new(base.X + (col - 1.5) * 55, 0, base.Z + 45 + rowi * 55))
 		end
 		return
 	end

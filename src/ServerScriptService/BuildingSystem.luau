@@ -263,6 +263,21 @@ function BuildingSystem.destroyOwnerBuildings(ownerId)
 	end
 end
 
+-- BÙ NHÌN TEST = CÔNG TRÌNH THẬT (loại có sẵn) phe địch (id -999), có máu THẬT nên
+-- phá được (nổ + respawn chỗ khác do Main lo). Gắn cờ `dummy` -> KHÔNG đánh trả.
+local DUMMY_OWNER = -999
+local DUMMY_TYPES = { "DroneHub", "LaserSat", "PlasmaSat" } -- công trình đất (không cần mỏ)
+function BuildingSystem.spawnDummy(pos, typeOverride)
+	local bt = typeOverride or DUMMY_TYPES[math.random(#DUMMY_TYPES)]
+	local b = createBuilding(DUMMY_OWNER, bt, 1, Vector3.new(pos.X, 40, pos.Z), nil)
+	if b and b.part then
+		b.part.Position = Vector3.new(pos.X, b.part.Size.Y / 2, pos.Z) -- đặt sát nền
+		b.part:SetAttribute("Dummy", true) -- cho minimap nhận diện
+		b.dummy = true                      -- CombatSystem bỏ qua khi bắn -> không đánh trả
+	end
+	return b
+end
+
 function BuildingSystem.clearAll()
 	for i = #GameState.buildings, 1, -1 do
 		local b = GameState.buildings[i]

@@ -183,6 +183,7 @@ function FleetSystem.spawnUnit(ownerId, unitType, ignoreCap)
 		projectile = stats.projectile,             -- (Lordz) bắn đạn bay thay vì hitscan
 		projSpeed = stats.projSpeed,
 		projRadius = stats.projRadius,
+		projColor = stats.projColor,               -- màu đạn riêng (vd blast tím Battleship)
 		coneAngle = stats.coneAngle,               -- (Lordz) Dragon: góc mở nón
 		volleyCount = stats.volleyCount,           -- (Lordz) Battleship: số tia mỗi cụm laser
 		melee = stats.melee,                       -- (Lordz) cận chiến: lao vào đánh áp sát
@@ -318,56 +319,59 @@ end
 local _b1, _b2, _b3 = {}, {}, {}
 local _ordered = {}
 
-local function packRings(list, center, dt, inner)
+-- HEX packing: xếp unit thành lưới LỤC GIÁC (honeycomb), mỗi unit cách hàng xóm đúng S studs.
+local SQRT3_2 = 0.8660254
+local HEX_DIRS = { { 1, 0 }, { 1, -1 }, { 0, -1 }, { -1, 0 }, { -1, 1 }, { 0, 1 } } -- 6 hàng xóm axial
+local _hexQ, _hexR = {}, {} -- buffer ô hex (tái dùng)
+
+-- Sinh `n` ô hex (axial) theo xoắn ốc từ tâm ra. skipCenter=true -> chừa ô (0,0) cho Tàu Mẹ.
+local function buildHexSlots(n, skipCenter)
+	local count = 0
+	if not skipCenter then count = 1; _hexQ[1], _hexR[1] = 0, 0 end
+	local k = 1
+	while count < n do
+		local q, r = HEX_DIRS[5][1] * k, HEX_DIRS[5][2] * k
+		for i = 1, 6 do
+			local dq, dr = HEX_DIRS[i][1], HEX_DIRS[i][2]
+			for _ = 1, k do
+				if count >= n then break end
+				count += 1
+				_hexQ[count], _hexR[count] = q, r
+				q += dq; r += dr
+			end
+			if count >= n then break end
+		end
+		k += 1
+	end
+end
+
+local function packRings(list, center, dt, skipCenter)
 	local n = #list
 	if n == 0 then return end
 
-	-- Bucket theo lớp để sắp ổn định (không dùng table.sort tránh đảo chỗ mỗi frame)
+	-- Sắp theo lớp (CORE/GUARD trong -> SCREEN ngoài) để tank ở giữa hex, bia ra rìa.
 	table.clear(_b1); table.clear(_b2); table.clear(_b3); table.clear(_ordered)
 	local buckets = { _b1, _b2, _b3 }
 	for _, u in ipairs(list) do
-		local L = RING_LAYER[u.ring] or 3
-		table.insert(buckets[L], u)
+		table.insert(buckets[RING_LAYER[u.ring] or 3], u)
 	end
 	local ordered = _ordered
 	for L = 1, 3 do
-		for _, u in ipairs(buckets[L]) do
-			table.insert(ordered, u)
-		end
+		for _, u in ipairs(buckets[L]) do table.insert(ordered, u) end
 	end
 
-	local i = 1
-	local radius = inner or Config.FLEET.INNER_RADIUS
-	local ringIndex = 0
-	while i <= n do
-		-- Scale theo cỡ unit mở đầu vòng: unit CÀNG TO -> spacing & gap càng lớn,
-		-- slot mỗi vòng càng ít. (Vì đã sort theo lớp nên mỗi vòng gần như 1 cỡ.)
-		local scale = unitFootprint(ordered[i].unitType) / BASE_FOOTPRINT
-		local spacing = Config.FLEET.UNIT_SPACING * scale
-		local circ = 2 * math.pi * radius
-		local capacity = math.clamp(
-			math.floor(circ / spacing),
-			Config.FLEET.RING_MIN_SLOTS,
-			Config.FLEET.RING_MAX_SLOTS
-		)
-		local ringCount = math.min(capacity, n - i + 1)
-		-- lệch pha mỗi vòng để không tạo "nan hoa" thẳng hàng
-		local phase = globalTheta + ringIndex * 0.6
-		for k = 0, ringCount - 1 do
-			local u = ordered[i + k]
-			local slotAngle = phase + (2 * math.pi) * k / ringCount
-			local cosA, sinA = math.cos(slotAngle), math.sin(slotAngle)
-			local target = Vector3.new(
-				center.X + cosA * radius,
-				center.Y,
-				center.Z + sinA * radius
-			)
-			-- hướng ra ngoài (xuyên tâm) -> unit chĩa mũi ra
-			steerUnit(u, target, Vector3.new(cosA, 0, sinA), dt)
-		end
-		i += ringCount
-		radius += Config.FLEET.RING_GAP * scale -- gap giãn theo cỡ unit
-		ringIndex += 1
+	-- Xếp vào lưới LỤC GIÁC quanh center: mỗi unit cách hàng xóm đúng S studs (gap đều),
+	-- kể cả khi split (mỗi cụm cũng dùng chung hàm này).
+	local S = Config.FLEET.HEX_SPACING or 11
+	buildHexSlots(n, skipCenter)
+	for i = 1, n do
+		local q, r = _hexQ[i], _hexR[i]
+		local wx = S * (q + r * 0.5) -- axial -> world (6 hàng xóm cách đều S)
+		local wz = S * SQRT3_2 * r
+		local target = Vector3.new(center.X + wx, center.Y, center.Z + wz)
+		local faceDir
+		if wx ~= 0 or wz ~= 0 then faceDir = Vector3.new(wx, 0, wz).Unit end
+		steerUnit(ordered[i], target, faceDir, dt)
 	end
 end
 
@@ -514,7 +518,7 @@ local function stepSatellites(owner, center, C, dt)
 		a.pos = Vector3.new(a.pos.X + a.vx * dt, center.Y, a.pos.Z + a.vz * dt)
 		local buf = _clusters[j + 1]
 		if #buf > 0 then
-			packRings(buf, a.pos, dt, 2) -- lõi nhỏ -> cụm vệ tinh ĐẶC, không lỗ giữa
+			packRings(buf, a.pos, dt, false) -- cụm vệ tinh: hex đặc từ tâm (không chừa lỗ)
 		end
 	end
 end
@@ -541,10 +545,10 @@ local function updateFormation(dt)
 			if #_ownerList > 0 then
 				local center = owner.part.Position
 
-				-- Máy trạng thái GỘP: quá SPLIT_REJOIN_DELAY không bấm -> vào chế độ gộp;
+				-- Máy trạng thái GỘP: hết cooldown (động) không bấm -> vào chế độ gộp;
 				-- gộp thì hạ 1 bậc mỗi SPLIT_REJOIN_STEP (16→8→…→1), vệ tinh hút về Vua.
-				local level = owner.splitLevel or 0
-				if level > 0 then
+				local level = (owner.split and now < (owner.rejoinAt or 0)) and 1 or 0 -- split nhị phân + cooldown
+				if false then -- (máy gộp cũ đã bỏ; split giờ nhị phân, luôn 2 đội)
 					if not owner.rejoining and now >= (owner.rejoinAt or 0) then
 						owner.rejoining = true
 						owner.rejoinNext = now
@@ -552,7 +556,10 @@ local function updateFormation(dt)
 					if owner.rejoining and now >= (owner.rejoinNext or 0) then
 						level -= 1
 						owner.splitLevel = level
-						owner.rejoinNext = now + (F.SPLIT_REJOIN_STEP or 0.6)
+						-- Đứng yên -> gom nhanh; đang lái chạy -> gom chậm (cụm rượt đuôi Vua).
+						local moving = owner.targetPoint
+							and Util.flatDist(owner.part.Position, owner.targetPoint) > (Config.MOTHERSHIP.STOP_DIST or 2) * 3
+						owner.rejoinNext = now + (moving and (F.SPLIT_REJOIN_STEP_MOVING or 1.4) or (F.SPLIT_REJOIN_STEP or 0.5))
 					end
 				end
 				level = math.clamp(level, 0, maxLevel)
@@ -560,8 +567,8 @@ local function updateFormation(dt)
 				local C = 2 ^ level -- 1,2,4,8,16
 				if C <= 1 then
 					-- 1 cụm: đội hình quanh Tàu Mẹ; xoá state vệ tinh -> split sau bung lại từ đầu.
-					owner.satState = nil
-					packRings(_ownerList, center, dt)
+					owner.splitOffset = Vector3.zero -- hợp về 1 đội -> reset offset
+					packRings(_ownerList, center, dt, true) -- hex quanh Tàu Mẹ (chừa ô giữa cho ship)
 				else
 					-- Chia round-robin: cụm 1 = VUA (bám Tàu Mẹ), cụm 2..C = vệ tinh CHASE con trỏ.
 					for j = 1, C do table.clear(_clusters[j]) end
@@ -569,9 +576,30 @@ local function updateFormation(dt)
 						table.insert(_clusters[((idx - 1) % C) + 1], u)
 					end
 					if #_clusters[1] > 0 then
-						packRings(_clusters[1], center, dt, 10) -- cụm Vua ôm sát Tàu Mẹ (ít hở)
+						packRings(_clusters[1], center, dt, true) -- cụm Vua: hex quanh Tàu Mẹ (chừa ô giữa)
 					end
-					stepSatellites(owner, center, C, dt) -- mô phỏng anchor động cho vệ tinh
+					-- ĐỘI 2: cách CỐ ĐỊNH theo hướng đi; nếu đang TARGET (click) thì phóng về mục tiêu.
+						local dir, dist
+						local ft = owner.attackTarget
+						if ft and ft.part and ft.part.Parent and ft.ownerId ~= ownerId and (ft.kind ~= "Mothership" or ft.alive) then
+							local tx, tz = ft.part.Position.X - center.X, ft.part.Position.Z - center.Z
+							local mm = math.sqrt(tx * tx + tz * tz)
+							if mm > 1e-3 then dir = Vector3.new(tx / mm, 0, tz / mm) end
+							dist = math.clamp(mm, F.SPLIT_FIXED_DIST or 65, F.SPLIT_TARGET_MAX or 200)
+						end
+						if not dir then
+							local f = owner.facing or Vector3.new(1, 0, 0)
+							local mm = math.sqrt(f.X * f.X + f.Z * f.Z)
+							dir = mm > 1e-3 and Vector3.new(f.X / mm, 0, f.Z / mm) or Vector3.new(1, 0, 0)
+							dist = F.SPLIT_FIXED_DIST or 65
+						end
+						local desired = dir * dist
+						local cur = owner.splitOffset or Vector3.zero
+						local dd = desired - cur
+						local dmv = dd.Magnitude
+						local stp = (F.SPLIT_OFFSET_SPEED or 240) * dt
+						owner.splitOffset = (dmv <= stp or dmv < 1e-4) and desired or (cur + dd.Unit * stp)
+						if #_clusters[2] > 0 then packRings(_clusters[2], center + owner.splitOffset, dt, false) end
 				end
 			end
 		end
@@ -584,9 +612,18 @@ local function onSplitInput(player)
 	local owner = GameState.motherships[player.UserId]
 	if not owner then return end
 	local maxLevel = Config.FLEET.SPLIT_MAX_LEVEL or 4
-	owner.splitLevel = math.min((owner.splitLevel or 0) + 1, maxLevel)
-	owner.rejoinAt = os.clock() + (Config.FLEET.SPLIT_REJOIN_DELAY or 3)
-	owner.rejoining = false -- bấm split lại -> huỷ chế độ gộp, chase con trỏ tiếp
+	owner.split = true -- LUÔN tách 2 đội (giữ tới hết cooldown)
+	-- Cooldown GIỮ split = BASE + (cấp-1)×PER_LEVEL (stacking) + số_quân×PER_UNIT (scale-to-size).
+	local F = Config.FLEET
+	local n = 0
+	for _, u in ipairs(GameState.units) do
+		if u.ownerId == player.UserId and not u.remnant then n += 1 end
+	end
+	local delay = (F.SPLIT_REJOIN_BASE or 6)
+		+ 0 -- (bỏ stacking theo cấp; split giờ nhị phân)
+		+ n * (F.SPLIT_REJOIN_PER_UNIT or 0.04)
+	owner.rejoinAt = os.clock() + math.min(delay, F.SPLIT_REJOIN_MAX or 30)
+	owner.rejoining = false -- bấm split lại -> huỷ chế độ gộp, chase con trỏ + gia hạn cooldown
 end
 
 -- Con trỏ THÔ từ client (không kẹp leash) -> điểm master cho vệ tinh split chase.

@@ -56,7 +56,7 @@ end)
 
 -- Sandbox Test: map nhỏ (~500) + hiện bù nhìn. Server báo qua TestState.
 local testMode = false
-local TEST_MAP = 500
+local TEST_MAP = Config.MAP.TEST_SIZE or 500
 Remotes.TestState.OnClientEvent:Connect(function(b) testMode = (b == true) end)
 
 local mapFrame = Instance.new("Frame")
@@ -240,11 +240,19 @@ local function redraw()
 
 	-- Sandbox Test: chấm ĐỎ cho bù nhìn (part có attribute "Dummy").
 	if testMode then
-		local units = Workspace:FindFirstChild("Units")
-		if units then
-			for _, part in ipairs(units:GetChildren()) do
+		local bld = Workspace:FindFirstChild("Buildings")
+		if bld then
+			for _, part in ipairs(bld:GetChildren()) do
 				if part:IsA("BasePart") and part:GetAttribute("Dummy") then
 					placeDot(part.Position.X, part.Position.Z, 7, COL_ENEMY_BLD, nil)
+				end
+			end
+		end
+		local msf = Workspace:FindFirstChild("Motherships")
+		if msf then
+			for _, part in ipairs(msf:GetChildren()) do
+				if part:IsA("BasePart") and part:GetAttribute("Dummy") then -- Tàu Mẹ bù nhìn
+					placeDot(part.Position.X, part.Position.Z, 11, COL_ENEMY_BLD, Color3.fromRGB(255, 255, 255))
 				end
 			end
 		end

@@ -344,6 +344,14 @@ function MothershipSystem.respawnPlayers()
 end
 
 -- Xử lý input di chuyển từ client: chỉ nhận điểm hợp lệ, kẹp trong map.
+-- Ranh giới di chuyển theo chế độ: sandbox test dùng vùng nhỏ (TEST_SIZE) -> KHÔNG cho
+-- bay ra khỏi nền test; trận dùng MAP.SIZE; sảnh dùng LOBBY.SIZE.
+local function moveBound()
+	if MatchState.isTest() then return Config.MAP.TEST_SIZE or 500 end
+	if MatchState.isPlaying() then return Config.MAP.SIZE end
+	return Config.LOBBY.SIZE
+end
+
 local function onMoveInput(player, point)
 	local entry = GameState.motherships[player.UserId]
 	if not entry or not entry.alive then return end
@@ -352,7 +360,7 @@ local function onMoveInput(player, point)
 	-- Giữ cao độ của mothership, chỉ dùng X,Z từ con trỏ
 	local target = Vector3.new(point.X, entry.part.Position.Y, point.Z)
 	-- Ở lobby kẹp trong sảnh (nhỏ hơn), trong trận kẹp trong map.
-	local bound = MatchState.isPlaying() and Config.MAP.SIZE or Config.LOBBY.SIZE
+	local bound = moveBound()
 	entry.targetPoint = Util.clampToMap(target, bound)
 end
 
@@ -396,7 +404,7 @@ local function stepMothership(entry, dt)
 
 	-- Không vượt quá đích trong 1 frame
 	local step = math.min(speed * dt, dist)
-	local bound = MatchState.isPlaying() and Config.MAP.SIZE or Config.LOBBY.SIZE
+	local bound = moveBound()
 	local newPos = pos + dir * step
 	newPos = Util.clampToMap(newPos, bound)
 	-- Không xuyên mỏ / công trình / Tàu Mẹ khác (bỏ qua chính mình; KHÔNG bị unit ghì).
