@@ -187,34 +187,10 @@ for i, def in ipairs(defs) do
 	buttons[i] = { def = def, btn = btn }
 end
 
--- ===== Nút cảm ứng (mobile): Split (giữ) + Huỷ xây =====
-if UserInputService.TouchEnabled then
-	local splitBtn = Instance.new("TextButton")
-	splitBtn.AnchorPoint = Vector2.new(0, 1)
-	splitBtn.Position = UDim2.new(0, 16, 1, -16)
-	splitBtn.Size = UDim2.new(0, 120, 0, 56)
-	splitBtn.BackgroundColor3 = Color3.fromRGB(120, 90, 210)
-	splitBtn.Font = Enum.Font.GothamBold; splitBtn.TextSize = 20
-	splitBtn.TextColor3 = Color3.fromRGB(255, 255, 255); splitBtn.Text = "⮂ Split"
-	local spc = Instance.new("UICorner"); spc.CornerRadius = UDim.new(0, 12); spc.Parent = splitBtn
-	splitBtn.Parent = gui
-	splitBtn.MouseButton1Down:Connect(function() Remotes.SplitInput:FireServer(true) end)
-	splitBtn.MouseButton1Up:Connect(function() Remotes.SplitInput:FireServer(false) end)
+-- (Layout cảm ứng mobile dựng ở cuối file — cụm Ability/Split/Shop + shop drawer.)
 
-	local cancelBtn = Instance.new("TextButton")
-	cancelBtn.AnchorPoint = Vector2.new(0, 1)
-	cancelBtn.Position = UDim2.new(0, 16, 1, -82)
-	cancelBtn.Size = UDim2.new(0, 120, 0, 48)
-	cancelBtn.BackgroundColor3 = Color3.fromRGB(150, 70, 70)
-	cancelBtn.Font = Enum.Font.GothamBold; cancelBtn.TextSize = 18
-	cancelBtn.TextColor3 = Color3.fromRGB(255, 255, 255); cancelBtn.Text = "✕ Huỷ xây"
-	local ccx = Instance.new("UICorner"); ccx.CornerRadius = UDim.new(0, 12); ccx.Parent = cancelBtn
-	cancelBtn.Parent = gui
-	cancelBtn.Activated:Connect(function()
-		ClientBus.cancelBuild:Fire()
-		Remotes.CancelBuild:FireServer()
-	end)
-end
+-- Các hàm cập nhật thêm (mobile layout đăng ký vào đây; gọi mỗi lần refresh).
+local extraRefresh = {}
 
 -- Bật/xám nút theo scrap + cap hiện tại
 local function refreshButtons()
@@ -233,6 +209,7 @@ local function refreshButtons()
 		entry.btn.TextTransparency = ok and 0 or 0.45
 		entry.btn.BackgroundTransparency = ok and 0 or 0.5
 	end
+	for _, fn in ipairs(extraRefresh) do fn() end
 end
 
 Remotes.ScrapUpdate.OnClientEvent:Connect(function(scrap)
@@ -664,6 +641,203 @@ RunService.RenderStepped:Connect(function()
 		refreshUpgradeInfo(selectedPart)
 	end
 end)
+
+-------------------------------------------------------------------------------
+-- LAYOUT CẢM ỨNG (mobile): resource strip trên-trái · rank chip trên-phải ·
+-- shop drawer giữa-dưới (tab Quân/Nhà, cuộn ngang) · cụm Ability/Split/Shop dưới-phải.
+-- Joystick (di chuyển) do InputController lo (góc dưới-trái). Chỉ bật khi TouchEnabled.
+-------------------------------------------------------------------------------
+if UserInputService.TouchEnabled then
+	-- Ẩn các thành phần layout PC
+	bar.Visible = false
+	hint.Visible = false
+	scrapLabel.Visible = false; fleetLabel.Visible = false; gemLabel.Visible = false
+	lb.Visible = false -- bảng xếp hạng đầy đủ -> thay bằng rank chip gọn
+
+	local PANEL = Color3.fromRGB(18, 24, 40)
+	local STROKE = Color3.fromRGB(57, 80, 122)
+	local function pill(parent, w)
+		local f = Instance.new("Frame")
+		f.Size = UDim2.new(0, w, 0, 30); f.BackgroundColor3 = PANEL; f.BackgroundTransparency = 0.08
+		local c = Instance.new("UICorner"); c.CornerRadius = UDim.new(0, 15); c.Parent = f
+		local s = Instance.new("UIStroke"); s.Color = STROKE; s.Transparency = 0.3; s.Parent = f
+		f.Parent = parent
+		return f
+	end
+
+	-- ===== TOP-LEFT: resource strip (Scrap · Gem · Fleet cap) =====
+	local strip = Instance.new("Frame")
+	strip.Position = UDim2.new(0, 58, 0, 8); strip.Size = UDim2.new(0, 300, 0, 30)
+	strip.BackgroundTransparency = 1; strip.Parent = gui
+	local sl = Instance.new("UIListLayout")
+	sl.FillDirection = Enum.FillDirection.Horizontal; sl.Padding = UDim.new(0, 6)
+	sl.VerticalAlignment = Enum.VerticalAlignment.Center; sl.Parent = strip
+
+	local scrapPill = pill(strip, 96); scrapPill.LayoutOrder = 1
+	local mScrap = Instance.new("TextLabel")
+	mScrap.Size = UDim2.fromScale(1, 1); mScrap.BackgroundTransparency = 1; mScrap.Font = Enum.Font.GothamBold
+	mScrap.TextSize = 14; mScrap.TextColor3 = Color3.fromRGB(255, 210, 100); mScrap.Text = "◈ 0"; mScrap.Parent = scrapPill
+
+	local gemPill = pill(strip, 84); gemPill.LayoutOrder = 2
+	local mGem = Instance.new("TextLabel")
+	mGem.Size = UDim2.fromScale(1, 1); mGem.BackgroundTransparency = 1; mGem.Font = Enum.Font.GothamBold
+	mGem.TextSize = 14; mGem.TextColor3 = Color3.fromRGB(200, 150, 255); mGem.Text = "◆ 0"; mGem.Parent = gemPill
+
+	local fleetPill = pill(strip, 110); fleetPill.LayoutOrder = 3
+	local fBar = Instance.new("Frame")
+	fBar.AnchorPoint = Vector2.new(0, 0.5); fBar.Position = UDim2.new(0, 8, 0.5, 0); fBar.Size = UDim2.new(0, 56, 0, 8)
+	fBar.BackgroundColor3 = Color3.fromRGB(43, 58, 92); fBar.Parent = fleetPill
+	local fbc = Instance.new("UICorner"); fbc.CornerRadius = UDim.new(1, 0); fbc.Parent = fBar
+	local fFill = Instance.new("Frame")
+	fFill.Size = UDim2.new(0, 0, 1, 0); fFill.BackgroundColor3 = Color3.fromRGB(102, 211, 138); fFill.Parent = fBar
+	local ffc = Instance.new("UICorner"); ffc.CornerRadius = UDim.new(1, 0); ffc.Parent = fFill
+	local fTxt = Instance.new("TextLabel")
+	fTxt.AnchorPoint = Vector2.new(1, 0.5); fTxt.Position = UDim2.new(1, -8, 0.5, 0); fTxt.Size = UDim2.new(0, 42, 1, 0)
+	fTxt.BackgroundTransparency = 1; fTxt.Font = Enum.Font.GothamBold; fTxt.TextSize = 11
+	fTxt.TextColor3 = Color3.fromRGB(207, 227, 255); fTxt.TextXAlignment = Enum.TextXAlignment.Right; fTxt.Text = "0/0"; fTxt.Parent = fleetPill
+
+	local mGemVal = 0
+	Remotes.GemUpdate.OnClientEvent:Connect(function(g) mGemVal = g; mGem.Text = "◆ " .. tostring(g) end)
+
+	-- ===== TOP-RIGHT: rank chip (dưới minimap) =====
+	local rankChip = pill(gui, 116)
+	rankChip.AnchorPoint = Vector2.new(1, 0); rankChip.Position = UDim2.new(1, -12, 0, 152)
+	local rankTxt = Instance.new("TextLabel")
+	rankTxt.Size = UDim2.fromScale(1, 1); rankTxt.BackgroundTransparency = 1; rankTxt.Font = Enum.Font.GothamBold
+	rankTxt.TextSize = 13; rankTxt.TextColor3 = Color3.fromRGB(255, 210, 100); rankTxt.Text = "#? · –"; rankTxt.Parent = rankChip
+	Remotes.Leaderboard.OnClientEvent:Connect(function(list)
+		for i, e in ipairs(list) do
+			if e.id == player.UserId then rankTxt.Text = ("#%d · %d"):format(i, e.score); break end
+		end
+	end)
+
+	-- ===== SHOP DRAWER (giữa-dưới) — tab Quân/Nhà + cuộn ngang =====
+	local drawer = Instance.new("Frame")
+	drawer.AnchorPoint = Vector2.new(0.5, 1); drawer.Position = UDim2.new(0.5, 0, 1, -14)
+	drawer.Size = UDim2.new(0, 360, 0, 118); drawer.BackgroundColor3 = Color3.fromRGB(14, 23, 48)
+	drawer.BackgroundTransparency = 0.05; drawer.Visible = false; drawer.ZIndex = 6; drawer.Parent = gui
+	local dcc = Instance.new("UICorner"); dcc.CornerRadius = UDim.new(0, 14); dcc.Parent = drawer
+	local dcs = Instance.new("UIStroke"); dcs.Color = STROKE; dcs.Transparency = 0.3; dcs.Parent = drawer
+
+	local tabRow = Instance.new("Frame")
+	tabRow.Position = UDim2.new(0, 10, 0, 8); tabRow.Size = UDim2.new(1, -20, 0, 24)
+	tabRow.BackgroundTransparency = 1; tabRow.ZIndex = 7; tabRow.Parent = drawer
+	local trl = Instance.new("UIListLayout"); trl.FillDirection = Enum.FillDirection.Horizontal
+	trl.Padding = UDim.new(0, 6); trl.Parent = tabRow
+
+	local scroll = Instance.new("ScrollingFrame")
+	scroll.Position = UDim2.new(0, 10, 0, 40); scroll.Size = UDim2.new(1, -20, 0, 68)
+	scroll.BackgroundTransparency = 1; scroll.BorderSizePixel = 0; scroll.ScrollingDirection = Enum.ScrollingDirection.X
+	scroll.ScrollBarThickness = 4; scroll.CanvasSize = UDim2.new(0, 0, 0, 0)
+	scroll.AutomaticCanvasSize = Enum.AutomaticSize.X; scroll.ZIndex = 7; scroll.Parent = drawer
+	local scl = Instance.new("UIListLayout"); scl.FillDirection = Enum.FillDirection.Horizontal
+	scl.Padding = UDim.new(0, 6); scl.SortOrder = Enum.SortOrder.LayoutOrder; scl.Parent = scroll
+
+	local activeTab = "buy"
+	local mShopBtns = {}
+	local function closeDrawer() drawer.Visible = false end
+
+	local function renderShop()
+		for _, e in ipairs(mShopBtns) do e.btn:Destroy() end
+		table.clear(mShopBtns)
+		local order = 0
+		for _, def in ipairs(defs) do
+			if def.kind == activeTab then
+				order += 1
+				local b = Instance.new("TextButton")
+				b.LayoutOrder = order; b.Size = UDim2.new(0, 62, 1, 0)
+				b.BackgroundColor3 = (def.kind == "build") and Color3.fromRGB(70, 90, 120) or Color3.fromRGB(50, 70, 60)
+				b.Font = Enum.Font.GothamBold; b.TextSize = 11; b.TextColor3 = Color3.fromRGB(240, 240, 240)
+				b.Text = ("%s\n%d ◈"):format(def.label, def.cost); b.ZIndex = 8; b.Parent = scroll
+				local c = Instance.new("UICorner"); c.CornerRadius = UDim.new(0, 8); c.Parent = b
+				b.Activated:Connect(function()
+					if def.kind == "build" then
+						ClientBus.enterBuild:Fire(def.key); closeDrawer()
+					else
+						Remotes.SpawnUnit:FireServer(def.key)
+					end
+				end)
+				table.insert(mShopBtns, { def = def, btn = b })
+			end
+		end
+		refreshButtons() -- áp trạng thái đủ/thiếu ngay
+	end
+
+	local tabBtns = {}
+	local function setTab(k)
+		activeTab = k
+		for kk, tb in pairs(tabBtns) do
+			tb.BackgroundColor3 = (kk == k) and Color3.fromRGB(90, 46, 166) or Color3.fromRGB(34, 49, 79)
+		end
+		renderShop()
+	end
+	for _, t in ipairs({ { k = "buy", label = "Quân" }, { k = "build", label = "Nhà" } }) do
+		local tb = Instance.new("TextButton")
+		tb.Size = UDim2.new(0, 70, 1, 0); tb.Font = Enum.Font.GothamBold; tb.TextSize = 12
+		tb.TextColor3 = Color3.fromRGB(235, 240, 250); tb.Text = t.label; tb.ZIndex = 8; tb.Parent = tabRow
+		local c = Instance.new("UICorner"); c.CornerRadius = UDim.new(0, 6); c.Parent = tb
+		tabBtns[t.k] = tb
+		tb.Activated:Connect(function() setTab(t.k) end)
+	end
+
+	-- ===== CỤM HÀNH ĐỘNG (dưới-phải): Ability (lớn) · Split · Shop =====
+	local ability = Instance.new("TextButton")
+	ability.AnchorPoint = Vector2.new(1, 1); ability.Position = UDim2.new(1, -16, 1, -16)
+	ability.Size = UDim2.new(0, 92, 0, 92); ability.BackgroundColor3 = Color3.fromRGB(90, 46, 166)
+	ability.Font = Enum.Font.GothamBold; ability.TextSize = 13; ability.TextColor3 = Color3.fromRGB(255, 255, 255)
+	ability.Text = "SPAWN"; ability.TextSize = 16; ability.ZIndex = 6; ability.Parent = gui
+	local abc = Instance.new("UICorner"); abc.CornerRadius = UDim.new(1, 0); abc.Parent = ability
+	local abs = Instance.new("UIStroke"); abs.Color = Color3.fromRGB(185, 140, 255); abs.Thickness = 2; abs.Parent = ability
+	-- SPAWN = mở/đóng drawer triệu hồi quân + công trình.
+	ability.Activated:Connect(function()
+		drawer.Visible = not drawer.Visible
+		if drawer.Visible then setTab(activeTab) end
+	end)
+
+	local function smallAction(x, y, label, color)
+		local b = Instance.new("TextButton")
+		b.AnchorPoint = Vector2.new(1, 1); b.Position = UDim2.new(1, x, 1, y); b.Size = UDim2.new(0, 56, 0, 56)
+		b.BackgroundColor3 = color; b.Font = Enum.Font.GothamBold; b.TextSize = 12
+		b.TextColor3 = Color3.fromRGB(235, 242, 255); b.Text = label; b.ZIndex = 6; b.Parent = gui
+		local c = Instance.new("UICorner"); c.CornerRadius = UDim.new(1, 0); c.Parent = b
+		local s = Instance.new("UIStroke"); s.Color = STROKE; s.Transparency = 0.2; s.Parent = b
+		return b
+	end
+	-- Split (giữ để tách bầy) — bên trái Spawn
+	local splitBtn = smallAction(-116, -46, "Split", Color3.fromRGB(30, 42, 68))
+	splitBtn.MouseButton1Down:Connect(function() Remotes.SplitInput:FireServer(true) end)
+	splitBtn.MouseButton1Up:Connect(function() Remotes.SplitInput:FireServer(false) end)
+
+	-- Cancel xây (chỉ hiện khi đang ở chế độ đặt building)
+	local cancelBtn = smallAction(-116, -108, "✕ Huỷ", Color3.fromRGB(120, 46, 52))
+	cancelBtn.Visible = false
+	cancelBtn.Activated:Connect(function()
+		ClientBus.cancelBuild:Fire(); Remotes.CancelBuild:FireServer(); cancelBtn.Visible = false
+	end)
+	ClientBus.enterBuild.Event:Connect(function() cancelBtn.Visible = true end)
+	ClientBus.cancelBuild.Event:Connect(function() cancelBtn.Visible = false end)
+
+	-- Cập nhật resource strip + trạng thái nút shop mỗi lần refresh.
+	table.insert(extraRefresh, function()
+		mScrap.Text = "◈ " .. tostring(state.scrap)
+		local ratio = state.max > 0 and math.clamp(state.used / state.max, 0, 1) or 0
+		fFill.Size = UDim2.new(ratio, 0, 1, 0)
+		fFill.BackgroundColor3 = (state.used >= state.max) and Color3.fromRGB(255, 120, 120) or Color3.fromRGB(102, 211, 138)
+		fTxt.Text = ("%d/%d"):format(state.used, state.max)
+		for _, e in ipairs(mShopBtns) do
+			local def = e.def
+			local ok = state.scrap >= def.cost
+			if def.kind == "buy" and (state.used + def.weight) > state.max then ok = false end
+			e.btn.AutoButtonColor = ok
+			e.btn.TextTransparency = ok and 0 or 0.45
+			e.btn.BackgroundTransparency = ok and 0 or 0.5
+			e.btn.Text = ("%s\n%d ◈"):format(def.label, def.cost)
+		end
+	end)
+
+	setTab("buy")
+	refreshButtons()
+end
 
 -------------------------------------------------------------------------------
 -- Ẩn/hiện HUD theo trạng thái trận (lobby: ẩn, playing: hiện)

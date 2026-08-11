@@ -22,6 +22,7 @@ local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local Workspace = game:GetService("Workspace")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local UserInputService = game:GetService("UserInputService")
 
 local Config = require(ReplicatedStorage.Config)
 local ClientBus = require(script.Parent.ClientBus)
@@ -208,6 +209,14 @@ local needle = Instance.new("TextLabel")
 needle.AnchorPoint = Vector2.new(0.5, 0.5); needle.Position = UDim2.fromScale(0.5, 0.5); needle.Size = UDim2.fromOffset(44, 44)
 needle.BackgroundTransparency = 1; needle.Font = Enum.Font.GothamBlack; needle.TextSize = 36
 needle.Text = "↑"; needle.TextColor3 = COL_MY_SHIP; needle.Parent = compass
+
+-- MOBILE: minimap lên góc TRÊN-PHẢI (khớp layout cảm ứng; rank chip nằm dưới nó);
+-- ẩn la bàn vì góc trên-giữa là vùng Roblox UI. Mũi tên trong minimap vẫn chỉ hướng.
+if UserInputService.TouchEnabled then
+	mapFrame.AnchorPoint = Vector2.new(1, 0)
+	mapFrame.Position = UDim2.new(1, -12, 0, 12)
+	compass.Visible = false
+end
 
 -------------------------------------------------------------------------------
 -- Vẽ lại mỗi ~0.08s (12Hz là đủ mượt cho minimap, nhẹ CPU)

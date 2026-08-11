@@ -268,6 +268,7 @@ end
 -- ===== MOBILE (cảm ứng): joystick di chuyển + chạm để đặt/chọn nhà =====
 local isTouch = UserInputService.TouchEnabled
 local stickVec = Vector2.new(0, 0) -- hướng joystick (-1..1): X=phải, Y=tới
+local dragWorld = nil              -- world point dưới ngón đang KÉO (lái bằng cách di màn hình)
 if isTouch then
 	local pgui = player:WaitForChild("PlayerGui")
 	local tgui = Instance.new("ScreenGui")
@@ -306,7 +307,32 @@ if isTouch then
 		end
 	end)
 
-	-- Chạm thế giới (không phải GUI) -> đặt nhà (đang build) / chọn nhà (trong trận).
+	-- ===== KÉO bất kỳ đâu (ngoài joystick/GUI) để LÁI =====
+	-- Một chạm chưa rõ TAP hay KÉO: di quá ngưỡng -> thành KÉO (lái tới điểm dưới ngón).
+	local moveTouch, candidate, candStart = nil, nil, nil
+	local DRAG_THRESH = 12
+	UserInputService.InputBegan:Connect(function(input, gp)
+		if input.UserInputType ~= Enum.UserInputType.Touch or gp then return end -- gp: chạm trúng nút GUI
+		if input == joyTouch then return end -- joystick tự lo
+		candidate = input
+		candStart = Vector2.new(input.Position.X, input.Position.Y)
+	end)
+	UserInputService.InputChanged:Connect(function(input)
+		if input.UserInputType ~= Enum.UserInputType.Touch then return end
+		if input == candidate and candStart
+			and (Vector2.new(input.Position.X, input.Position.Y) - candStart).Magnitude > DRAG_THRESH then
+			moveTouch = input; candidate = nil -- đã di đủ xa -> chuyển sang LÁI
+		end
+		if input == moveTouch then
+			dragWorld = cursorWorldPoint(Vector2.new(input.Position.X, input.Position.Y))
+		end
+	end)
+	UserInputService.InputEnded:Connect(function(input)
+		if input == moveTouch then moveTouch = nil; dragWorld = nil end
+		if input == candidate then candidate = nil end
+	end)
+
+	-- TAP (chạm nhanh) thế giới: build -> đặt nhà · nhà mình -> panel · còn lại -> khoá mục tiêu địch.
 	UserInputService.TouchTapInWorld:Connect(function(pos, processedByUI)
 		if processedByUI or not playing then return end
 		if buildMode then
@@ -316,8 +342,9 @@ if isTouch then
 		else
 			local bpart = buildingUnderCursor(pos)
 			if bpart and bpart:GetAttribute("OwnerUserId") == player.UserId then
-				ClientBus.selectBuilding:Fire(bpart)
+				ClientBus.selectBuilding:Fire(bpart) -- nhà mình -> nâng cấp/bán
 			else
+				setFocus(enemyPartUnderCursor(pos)) -- tap tàu/quân địch -> CẢ fleet focus-fire; trống -> bỏ
 				ClientBus.selectBuilding:Fire(nil)
 			end
 		end
@@ -381,16 +408,31 @@ RunService.RenderStepped:Connect(function(dt)
 	if accum >= SEND_INTERVAL then
 		accum = 0
 		if isTouch then
-			-- MOBILE: lái bằng joystick (camera-relative). Build/mở UI nhà -> đứng yên.
+			-- MOBILE: lái bằng KÉO màn hình (ưu tiên) hoặc joystick. Build/mở UI nhà -> đứng yên.
 			local ship = getMyShip()
 			if ship then
+				local sp = ship.Position
+				-- Người chơi tự điều khiển -> huỷ auto-lái tới cổng.
+				if ClientBus.autoGo and (dragWorld or stickVec.Magnitude > 0.15) then ClientBus.autoGo = nil end
 				if buildMode or player:GetAttribute("BuildingUIOpen") then
-					Remotes.MoveInput:FireServer(ship.Position)
+					Remotes.MoveInput:FireServer(sp)
+				elseif dragWorld then
+					-- Kéo màn hình: lái tới điểm dưới ngón (kẹp leash như PC) + AimInput cho vệ tinh split.
+					Remotes.AimInput:FireServer(dragWorld)
+					local flat = Vector3.new(dragWorld.X - sp.X, 0, dragWorld.Z - sp.Z)
+					local leash = playing and (Config.MOTHERSHIP.MOVE_LEASH or 1e9) or 1e9
+					local target = (flat.Magnitude > leash) and (sp + flat.Unit * leash) or dragWorld
+					Remotes.MoveInput:FireServer(target)
 				elseif stickVec.Magnitude > 0.15 then
 					local reach = playing and (Config.MOTHERSHIP.MOVE_LEASH or 70) or LOBBY_AHEAD
-					Remotes.MoveInput:FireServer(ship.Position + camDir(stickVec.X, stickVec.Y) * reach)
+					Remotes.MoveInput:FireServer(sp + camDir(stickVec.X, stickVec.Y) * reach)
+				elseif (not playing) and ClientBus.autoGo then
+					-- Sảnh: chạm cổng -> Tàu Mẹ TỰ lái tới đó (tới nơi thì applyZone tự vào trận).
+					local g = ClientBus.autoGo
+					if (Vector3.new(g.X - sp.X, 0, g.Z - sp.Z)).Magnitude < 8 then ClientBus.autoGo = nil end
+					Remotes.MoveInput:FireServer(Vector3.new(g.X, sp.Y, g.Z))
 				else
-					Remotes.MoveInput:FireServer(ship.Position)
+					Remotes.MoveInput:FireServer(sp)
 				end
 			end
 		elseif buildMode then
