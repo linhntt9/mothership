@@ -667,23 +667,24 @@ if UserInputService.TouchEnabled then
 
 	-- ===== TOP-LEFT: resource strip (Scrap · Gem · Fleet cap) =====
 	local strip = Instance.new("Frame")
-	strip.Position = UDim2.new(0, 58, 0, 8); strip.Size = UDim2.new(0, 300, 0, 30)
+	-- Trên-PHẢI: xếp DỌC dưới minimap (y12..144) + rank chip (y152..182), né topbar Roblox bên trái.
+	strip.AnchorPoint = Vector2.new(1, 0); strip.Position = UDim2.new(1, -12, 0, 188); strip.Size = UDim2.new(0, 116, 0, 102)
 	strip.BackgroundTransparency = 1; strip.Parent = gui
 	local sl = Instance.new("UIListLayout")
-	sl.FillDirection = Enum.FillDirection.Horizontal; sl.Padding = UDim.new(0, 6)
-	sl.VerticalAlignment = Enum.VerticalAlignment.Center; sl.Parent = strip
+	sl.FillDirection = Enum.FillDirection.Vertical; sl.Padding = UDim.new(0, 6)
+	sl.HorizontalAlignment = Enum.HorizontalAlignment.Right; sl.Parent = strip
 
-	local scrapPill = pill(strip, 96); scrapPill.LayoutOrder = 1
+	local scrapPill = pill(strip, 116); scrapPill.LayoutOrder = 1
 	local mScrap = Instance.new("TextLabel")
 	mScrap.Size = UDim2.fromScale(1, 1); mScrap.BackgroundTransparency = 1; mScrap.Font = Enum.Font.GothamBold
 	mScrap.TextSize = 14; mScrap.TextColor3 = Color3.fromRGB(255, 210, 100); mScrap.Text = "◈ 0"; mScrap.Parent = scrapPill
 
-	local gemPill = pill(strip, 84); gemPill.LayoutOrder = 2
+	local gemPill = pill(strip, 116); gemPill.LayoutOrder = 2
 	local mGem = Instance.new("TextLabel")
 	mGem.Size = UDim2.fromScale(1, 1); mGem.BackgroundTransparency = 1; mGem.Font = Enum.Font.GothamBold
 	mGem.TextSize = 14; mGem.TextColor3 = Color3.fromRGB(200, 150, 255); mGem.Text = "◆ 0"; mGem.Parent = gemPill
 
-	local fleetPill = pill(strip, 110); fleetPill.LayoutOrder = 3
+	local fleetPill = pill(strip, 116); fleetPill.LayoutOrder = 3
 	local fBar = Instance.new("Frame")
 	fBar.AnchorPoint = Vector2.new(0, 0.5); fBar.Position = UDim2.new(0, 8, 0.5, 0); fBar.Size = UDim2.new(0, 56, 0, 8)
 	fBar.BackgroundColor3 = Color3.fromRGB(43, 58, 92); fBar.Parent = fleetPill

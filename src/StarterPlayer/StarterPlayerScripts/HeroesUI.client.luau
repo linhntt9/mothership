@@ -334,5 +334,5 @@ end)
 
 -- Nút 📖 chỉ hiện trong TRẬN (ở sảnh đã có nút sidebar).
 Remotes.MatchState.OnClientEvent:Connect(function(s)
-	openBtn.Visible = (s == "playing")
+	openBtn.Visible = false -- (yêu cầu) KHÔNG hiện nút Index trong trận; ở sảnh mở từ sidebar
 end)
