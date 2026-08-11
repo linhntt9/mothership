@@ -267,7 +267,7 @@ local chestRemaining = 0 -- giây còn lại tới lần mở kế (server là n
 
 local chestPanel = Instance.new("Frame")
 chestPanel.AnchorPoint = Vector2.new(0.5, 0.5); chestPanel.Position = UDim2.new(0.5, 0, 0.46, 0)
-chestPanel.Size = UDim2.new(0, 420, 0, 360); chestPanel.BackgroundColor3 = PANEL_BG; chestPanel.Visible = false
+chestPanel.Size = UDim2.new(0, 420, 0, 440); chestPanel.BackgroundColor3 = PANEL_BG; chestPanel.Visible = false
 local ccc = Instance.new("UICorner"); ccc.CornerRadius = UDim.new(0, 16); ccc.Parent = chestPanel
 local ccs = Instance.new("UIStroke"); ccs.Thickness = 2; ccs.Color = CHEST_GOLD; ccs.Transparency = 0.25; ccs.Parent = chestPanel
 chestPanel.Parent = gui
@@ -308,21 +308,39 @@ chestReward.TextColor3 = Color3.fromRGB(210, 220, 235); chestReward.Parent = che
 local GEM_COST = (Config.LOBBY.CHEST and Config.LOBBY.CHEST.GEM_COST) or 100
 
 local freeBtn = Instance.new("TextButton")
-freeBtn.AnchorPoint = Vector2.new(0, 1); freeBtn.Position = UDim2.new(0, 20, 1, -18)
-freeBtn.Size = UDim2.new(0.5, -26, 0, 48)
+freeBtn.AnchorPoint = Vector2.new(0.5, 1); freeBtn.Position = UDim2.new(0.5, 0, 1, -114)
+freeBtn.Size = UDim2.new(1, -40, 0, 40)
 freeBtn.Font = Enum.Font.GothamBold; freeBtn.TextSize = 15
 freeBtn.Text = "MIỄN PHÍ"; freeBtn.TextColor3 = Color3.fromRGB(20, 40, 20)
 freeBtn.Parent = chestPanel
 local fbc = Instance.new("UICorner"); fbc.CornerRadius = UDim.new(0, 10); fbc.Parent = freeBtn
 
 local gemBtn = Instance.new("TextButton")
-gemBtn.AnchorPoint = Vector2.new(1, 1); gemBtn.Position = UDim2.new(1, -20, 1, -18)
-gemBtn.Size = UDim2.new(0.5, -26, 0, 48)
+gemBtn.AnchorPoint = Vector2.new(0, 1); gemBtn.Position = UDim2.new(0, 20, 1, -18)
+gemBtn.Size = UDim2.new(0.5, -26, 0, 44)
 gemBtn.Font = Enum.Font.GothamBold; gemBtn.TextSize = 15
 gemBtn.BackgroundColor3 = Color3.fromRGB(90, 150, 240); gemBtn.TextColor3 = Color3.new(1, 1, 1)
-gemBtn.Text = ("ROLL · %d 💎"):format(GEM_COST)
+gemBtn.Text = ("ROLL ×1 · %d 💎"):format(GEM_COST)
 gemBtn.Parent = chestPanel
 local gbc = Instance.new("UICorner"); gbc.CornerRadius = UDim.new(0, 10); gbc.Parent = gemBtn
+
+-- Nút ROLL ×10 (Gem, đảm bảo ít nhất 1 Rare+) — kiểu Genshin.
+local gem10Btn = Instance.new("TextButton")
+gem10Btn.AnchorPoint = Vector2.new(1, 1); gem10Btn.Position = UDim2.new(1, -20, 1, -18)
+gem10Btn.Size = UDim2.new(0.5, -26, 0, 44)
+gem10Btn.Font = Enum.Font.GothamBold; gem10Btn.TextSize = 15
+gem10Btn.BackgroundColor3 = Color3.fromRGB(150, 110, 240); gem10Btn.TextColor3 = Color3.new(1, 1, 1)
+gem10Btn.Text = ("ROLL ×10 · %d 💎"):format(GEM_COST * 10)
+gem10Btn.Parent = chestPanel
+local g10c = Instance.new("UICorner"); g10c.CornerRadius = UDim.new(0, 10); g10c.Parent = gem10Btn
+
+-- Thanh PITY ("cầu Epic"): còn bao nhiêu lượt tới Epic đảm bảo (server cập nhật).
+local pityLabel = Instance.new("TextLabel")
+pityLabel.AnchorPoint = Vector2.new(0.5, 1); pityLabel.Position = UDim2.new(0.5, 0, 1, -164)
+pityLabel.Size = UDim2.new(1, -40, 0, 18); pityLabel.BackgroundTransparency = 1
+pityLabel.Font = Enum.Font.GothamBold; pityLabel.TextSize = 13
+pityLabel.TextColor3 = Color3.fromRGB(255, 210, 120); pityLabel.TextXAlignment = Enum.TextXAlignment.Center
+pityLabel.Text = ""; pityLabel.Parent = chestPanel
 
 local function refreshChest()
 	if chestRemaining > 0 then
@@ -344,6 +362,9 @@ freeBtn.Activated:Connect(function()
 end)
 gemBtn.Activated:Connect(function()
 	Remotes.OpenChest:FireServer("gem")
+end)
+gem10Btn.Activated:Connect(function()
+	Remotes.OpenChest:FireServer("gem10")
 end)
 
 -- Hiệu ứng GACHA: orb quay hồi hộp -> flash màu rarity -> thẻ Tàu Mẹ bật ra.
@@ -458,12 +479,201 @@ local function playGachaReveal(reward)
 	end)
 end
 
--- Server trả kết quả: (ok, reward{isNew,name,rarity,color}|nil, freeRemaining, reason).
--- reason = "playing" | "cooldown" | "nogem".
-Remotes.OpenChest.OnClientEvent:Connect(function(ok, reward, freeLeft, reason)
+-- Hiệu ứng GACHA kiểu Genshin: overlay đen + sao nền -> TIA SÁNG dọc màu theo độ
+-- hiếm CAO NHẤT của lượt (xanh<tím<vàng) -> bùng sáng -> các thẻ Tàu Mẹ hiện so le.
+-- Nhận list (x1 = 1 phần tử, x10 = 10). Có nút BỎ QUA để nhảy thẳng tới reveal.
+local RARITY_RANK = { Common = 1, Rare = 2, Epic = 3 }
+local SKY_COLOR = {
+	Common = Color3.fromRGB(90, 170, 255),   -- xanh dương
+	Rare   = Color3.fromRGB(190, 120, 255),   -- tím
+	Epic   = Color3.fromRGB(255, 205, 70),    -- vàng
+}
+local function playGenshinReveal(list)
+	local TweenService = game:GetService("TweenService")
+	local Debris = game:GetService("Debris")
+	if #list == 0 then return end
+
+	local best = "Common"
+	for _, r in ipairs(list) do
+		if (RARITY_RANK[r.rarity] or 1) > (RARITY_RANK[best] or 1) then best = r.rarity end
+	end
+	local skyCol = SKY_COLOR[best] or SKY_COLOR.Common
+
+	local ov = Instance.new("Frame")
+	ov.Size = UDim2.fromScale(1, 1); ov.BackgroundColor3 = Color3.new(0, 0, 0)
+	ov.BackgroundTransparency = 1; ov.ZIndex = 60; ov.Parent = gui
+	TweenService:Create(ov, TweenInfo.new(0.35), { BackgroundTransparency = 0.1 }):Play()
+
+	-- Sao nền lấp lánh.
+	for _ = 1, 26 do
+		local sz = math.random(2, 5)
+		local s = Instance.new("Frame")
+		s.Size = UDim2.fromOffset(sz, sz); s.BackgroundColor3 = Color3.new(1, 1, 1)
+		s.BackgroundTransparency = 0.2 + math.random() * 0.5
+		s.Position = UDim2.fromScale(math.random(), math.random())
+		s.ZIndex = 61; s.Parent = ov
+		local sc = Instance.new("UICorner"); sc.CornerRadius = UDim.new(1, 0); sc.Parent = s
+	end
+
+	-- Nút BỎ QUA.
+	local skip = Instance.new("TextButton")
+	skip.AnchorPoint = Vector2.new(1, 0); skip.Position = UDim2.new(1, -18, 0, 16)
+	skip.Size = UDim2.fromOffset(104, 30); skip.BackgroundColor3 = Color3.fromRGB(40, 44, 60)
+	skip.BackgroundTransparency = 0.2; skip.Font = Enum.Font.GothamBold; skip.TextSize = 13
+	skip.TextColor3 = Color3.fromRGB(220, 226, 240); skip.Text = "BỎ QUA ⏩"; skip.ZIndex = 90; skip.Parent = ov
+	local skc = Instance.new("UICorner"); skc.CornerRadius = UDim.new(0, 8); skc.Parent = skip
+
+	-- Tia sáng dọc giữa màn (giai đoạn hồi hộp).
+	local beam = Instance.new("Frame")
+	beam.AnchorPoint = Vector2.new(0.5, 0.5); beam.Position = UDim2.fromScale(0.5, 0.5)
+	beam.Size = UDim2.new(0, 6, 0, 0); beam.BackgroundColor3 = skyCol
+	beam.BackgroundTransparency = 0.1; beam.ZIndex = 62; beam.Parent = ov
+	local bg = Instance.new("UIGradient"); bg.Rotation = 90
+	bg.Transparency = NumberSequence.new({
+		NumberSequenceKeypoint.new(0, 1), NumberSequenceKeypoint.new(0.5, 0), NumberSequenceKeypoint.new(1, 1),
+	}); bg.Parent = beam
+
+	local done = false
+	local function reveal()
+		if done then return end; done = true
+		skip.Visible = false
+		if beam.Parent then beam:Destroy() end
+
+		-- Bùng sáng màu sky.
+		local flash = Instance.new("Frame")
+		flash.Size = UDim2.fromScale(1, 1); flash.BackgroundColor3 = skyCol
+		flash.BackgroundTransparency = 0; flash.ZIndex = 70; flash.Parent = ov
+		TweenService:Create(flash, TweenInfo.new(0.6), { BackgroundTransparency = 1 }):Play()
+		Debris:AddItem(flash, 0.65)
+
+		-- Lưới thẻ (10 -> 5x2; 1 -> 1 thẻ lớn).
+		local n = #list
+		local cols = n > 1 and 5 or 1
+		local rows = math.ceil(n / cols)
+		local cw = n > 1 and 122 or 250
+		local ch = n > 1 and 152 or 300
+		local gap = 12
+		local holder = Instance.new("Frame")
+		holder.AnchorPoint = Vector2.new(0.5, 0.5); holder.Position = UDim2.fromScale(0.5, 0.46)
+		holder.BackgroundTransparency = 1; holder.ZIndex = 71; holder.Parent = ov
+		holder.Size = UDim2.fromOffset(cols * cw + (cols - 1) * gap, rows * ch + (rows - 1) * gap)
+
+		local big = n == 1
+		for idx, r in ipairs(list) do
+			local rar = r.rarity or "Common"
+			local rarCol = (Config.RARITY_COLOR and Config.RARITY_COLOR[rar]) or CHEST_GOLD
+			local ci = (idx - 1) % cols
+			local ri = math.floor((idx - 1) / cols)
+
+			local card = Instance.new("Frame")
+			card.AnchorPoint = Vector2.new(0.5, 0.5)
+			card.Position = UDim2.fromOffset(ci * (cw + gap) + cw / 2, ri * (ch + gap) + ch / 2)
+			card.Size = UDim2.fromOffset(cw, ch); card.BackgroundColor3 = Color3.fromRGB(22, 26, 38)
+			card.BackgroundTransparency = 1; card.ZIndex = 72; card.Parent = holder
+			local cc = Instance.new("UICorner"); cc.CornerRadius = UDim.new(0, 12); cc.Parent = card
+			local cs = Instance.new("UIStroke"); cs.Color = rarCol; cs.Thickness = big and 3 or 2.5; cs.Transparency = 1; cs.Parent = card
+
+			local sw = Instance.new("Frame"); sw.AnchorPoint = Vector2.new(0.5, 0)
+			sw.Position = UDim2.new(0.5, 0, 0, big and 30 or 16)
+			sw.Size = UDim2.fromOffset(big and 112 or 56, big and 112 or 56)
+			sw.BackgroundColor3 = r.color or rarCol; sw.BackgroundTransparency = 1; sw.ZIndex = 73; sw.Parent = card
+			local swc = Instance.new("UICorner"); swc.CornerRadius = UDim.new(1, 0); swc.Parent = sw
+			local sws = Instance.new("UIStroke"); sws.Color = Color3.new(1, 1, 1); sws.Thickness = 2; sws.Transparency = 1; sws.Parent = sw
+
+			local nm = Instance.new("TextLabel"); nm.AnchorPoint = Vector2.new(0.5, 1)
+			nm.Position = UDim2.new(0.5, 0, 1, big and -52 or -26); nm.Size = UDim2.new(1, -8, 0, 32)
+			nm.BackgroundTransparency = 1; nm.Font = Enum.Font.GothamBlack; nm.TextSize = big and 22 or 12
+			nm.TextWrapped = true; nm.Text = r.name; nm.TextColor3 = r.color or rarCol
+			nm.TextTransparency = 1; nm.ZIndex = 73; nm.Parent = card
+
+			local rr = Instance.new("TextLabel"); rr.AnchorPoint = Vector2.new(0.5, 1)
+			rr.Position = UDim2.new(0.5, 0, 1, big and -26 or -8); rr.Size = UDim2.new(1, -8, 0, 18)
+			rr.BackgroundTransparency = 1; rr.Font = Enum.Font.GothamBold; rr.TextSize = big and 15 or 11
+			rr.Text = string.upper(rar); rr.TextColor3 = rarCol; rr.TextTransparency = 1; rr.ZIndex = 73; rr.Parent = card
+
+			local badge
+			if r.isNew then
+				badge = Instance.new("TextLabel"); badge.AnchorPoint = Vector2.new(1, 0)
+				badge.Position = UDim2.new(1, -6, 0, 6); badge.Size = UDim2.fromOffset(40, 16)
+				badge.BackgroundColor3 = Color3.fromRGB(120, 255, 150); badge.Font = Enum.Font.GothamBlack
+				badge.TextSize = 10; badge.Text = "NEW"; badge.TextColor3 = Color3.fromRGB(10, 40, 20)
+				badge.TextTransparency = 1; badge.BackgroundTransparency = 1; badge.ZIndex = 74; badge.Parent = card
+				local bc = Instance.new("UICorner"); bc.CornerRadius = UDim.new(0, 4); bc.Parent = badge
+			end
+
+			task.delay((idx - 1) * (n > 1 and 0.08 or 0), function()
+				if not card.Parent then return end
+				card.Size = UDim2.fromOffset(cw * 0.8, ch * 0.8)
+				TweenService:Create(card, TweenInfo.new(0.28, Enum.EasingStyle.Back, Enum.EasingDirection.Out),
+					{ Size = UDim2.fromOffset(cw, ch), BackgroundTransparency = 0 }):Play()
+				TweenService:Create(cs, TweenInfo.new(0.3), { Transparency = 0 }):Play()
+				TweenService:Create(sw, TweenInfo.new(0.3), { BackgroundTransparency = 0 }):Play()
+				TweenService:Create(sws, TweenInfo.new(0.3), { Transparency = 0.3 }):Play()
+				TweenService:Create(nm, TweenInfo.new(0.3), { TextTransparency = 0 }):Play()
+				TweenService:Create(rr, TweenInfo.new(0.3), { TextTransparency = 0 }):Play()
+				if badge then
+					TweenService:Create(badge, TweenInfo.new(0.3), { BackgroundTransparency = 0, TextTransparency = 0 }):Play()
+				end
+				-- Epic: nhấp viền lung linh.
+				if rar == "Epic" then
+					task.spawn(function()
+						while card.Parent do
+							TweenService:Create(cs, TweenInfo.new(0.6), { Thickness = (big and 6 or 5) }):Play(); task.wait(0.6)
+							TweenService:Create(cs, TweenInfo.new(0.6), { Thickness = (big and 3 or 2.5) }):Play(); task.wait(0.6)
+						end
+					end)
+				end
+			end)
+		end
+
+		local hint = Instance.new("TextLabel"); hint.AnchorPoint = Vector2.new(0.5, 1)
+		hint.Position = UDim2.new(0.5, 0, 1, -22); hint.Size = UDim2.new(0, 420, 0, 20)
+		hint.BackgroundTransparency = 1; hint.Font = Enum.Font.Gotham; hint.TextSize = 13
+		hint.Text = "Bấm để đóng"; hint.TextColor3 = Color3.fromRGB(170, 178, 195); hint.ZIndex = 90; hint.Parent = ov
+
+		local closeBtn = Instance.new("TextButton"); closeBtn.Size = UDim2.fromScale(1, 1)
+		closeBtn.BackgroundTransparency = 1; closeBtn.Text = ""; closeBtn.ZIndex = 80; closeBtn.Parent = ov
+		local closed = false
+		local function doClose()
+			if closed then return end; closed = true
+			TweenService:Create(ov, TweenInfo.new(0.25), { BackgroundTransparency = 1 }):Play()
+			Debris:AddItem(ov, 0.3)
+		end
+		closeBtn.Activated:Connect(doClose)
+		task.delay((#list - 1) * 0.08 + 5, doClose)
+	end
+
+	TweenService:Create(beam, TweenInfo.new(1.2, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+		Size = UDim2.new(0, 22, 1, 0), BackgroundTransparency = 0,
+	}):Play()
+	skip.Activated:Connect(reveal)
+	task.delay(1.35, reveal)
+end
+
+-- Server trả kết quả: (ok, reward|nil, freeRemaining, reason, pityInfo).
+-- reward.multi=true -> reward.rolls là mảng 10 kết quả. reason = "playing"|"cooldown"|"nogem".
+Remotes.OpenChest.OnClientEvent:Connect(function(ok, reward, freeLeft, reason, pityInfo)
 	chestRemaining = freeLeft or 0
+	if pityInfo and pityInfo.max then
+		local left = math.max(0, (pityInfo.max or 0) - (pityInfo.n or 0))
+		pityLabel.Text = left <= 0 and "✨ Lượt tới CHẮC CHẮN ra Epic!"
+			or ("🔮 Cầu Epic đảm bảo sau %d lượt"):format(left)
+	end
 	if ok and reward then
-		playGachaReveal(reward) -- hiệu ứng gacha
+		local list = reward.multi and reward.rolls or { reward }
+		playGenshinReveal(list) -- hiệu ứng gacha kiểu Genshin
+		if reward.multi then
+			-- Gộp tóm tắt cho dòng chữ dưới panel (đếm mới/trùng + con hiếm nhất).
+			local newN, best = 0, "Common"
+			for _, r in ipairs(list) do
+				if r.isNew then newN += 1 end
+				if (RARITY_RANK[r.rarity] or 1) > (RARITY_RANK[best] or 1) then best = r.rarity end
+			end
+			reward.isNew = newN > 0
+			reward.name = ("Roll ×10 — %d mới · %d trùng · hiếm nhất %s"):format(newN, #list - newN, best)
+			reward.rarity = ""
+			reward.color = nil
+		end
 		if reward.isNew then
 			chestReward.Text = ("🚀 TÀU MẸ MỚI!\n%s (%s)"):format(reward.name, reward.rarity or "")
 		else

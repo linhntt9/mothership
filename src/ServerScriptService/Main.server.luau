@@ -438,6 +438,10 @@ end)
 -- RƯƠNG CLASS ở sảnh: roll ra 1 Tàu Mẹ (theo weight/độ hiếm), CÓ THỂ trùng.
 -- Reply: (ok, reward{isNew,id,name,rarity,color}|nil, cooldownConLai). Chỉ ở LOBBY.
 local chestLastOpen = {} -- [uid] = tick() lần mở gần nhất
+-- PITY kiểu gacha (session-only, KHÔNG đụng schema DataStore): đếm số lượt kể từ
+-- lần ra Epic gần nhất; tới PITY_EPIC lượt thì lượt đó CHẮC CHẮN ra Epic (rồi reset).
+local chestPity = {}      -- [uid] = số lượt kể từ Epic gần nhất
+local PITY_EPIC = 30      -- "cầu" Epic đảm bảo sau 30 lượt không ra Epic
 local function rollHero()
 	local total = 0
 	for _, h in ipairs(Config.HEROES) do total += (h.weight or 0) end
@@ -448,6 +452,20 @@ local function rollHero()
 	end
 	return Config.HEROES[#Config.HEROES]
 end
+-- Roll trong 1 nhóm độ hiếm theo weight (dùng cho pity Epic & đảm bảo Rare+ của x10).
+local function rollInPool(pred)
+	local total = 0
+	for _, h in ipairs(Config.HEROES) do if pred(h) then total += (h.weight or 0) end end
+	if total <= 0 then return rollHero() end
+	local r = math.random() * total
+	for _, h in ipairs(Config.HEROES) do
+		if pred(h) then r -= (h.weight or 0); if r <= 0 then return h end end
+	end
+	return rollHero()
+end
+local function pickEpic()     return rollInPool(function(h) return h.rarity == "Epic" end) end
+local function pickRarePlus() return rollInPool(function(h) return h.rarity ~= "Common" end) end
+
 -- Số giây còn lại của lượt roll MIỄN PHÍ (client hiện đồng hồ đếm).
 local function freeRemaining(uid)
 	local last = chestLastOpen[uid]
@@ -456,8 +474,17 @@ local function freeRemaining(uid)
 end
 
 -- Thực hiện 1 lượt roll: chọn tàu, ghi sở hữu, đánh dấu lưu nếu là tàu mới.
-local function doRoll(uid)
-	local h = rollHero()
+local function doRoll(uid, forceRarePlus)
+	chestPity[uid] = (chestPity[uid] or 0) + 1
+	local h
+	if chestPity[uid] >= PITY_EPIC then
+		h = pickEpic()               -- cầu Epic đảm bảo
+	elseif forceRarePlus then
+		h = pickRarePlus()           -- đảm bảo Rare+ cho lượt x10
+	else
+		h = rollHero()
+	end
+	if h.rarity == "Epic" then chestPity[uid] = 0 end
 	local owned = GameState.ownedHeroes[uid] or {}
 	GameState.ownedHeroes[uid] = owned
 	local isNew = not owned[h.id]
@@ -474,8 +501,8 @@ Remotes.OpenChest.OnServerEvent:Connect(function(player, mode)
 		Remotes.OpenChest:FireClient(player, false, nil, 0, "playing")
 		return
 	end
-	if mode == "gem" then
-		if not EconomySystem.trySpendGems(uid, Config.LOBBY.CHEST.GEM_COST) then
+	if mode == "gem" or mode == "gem10" then
+		if not EconomySystem.trySpendGems(uid, Config.LOBBY.CHEST.GEM_COST * ((mode == "gem10") and 10 or 1)) then
 			Remotes.OpenChest:FireClient(player, false, nil, freeRemaining(uid), "nogem")
 			return
 		end
@@ -490,8 +517,23 @@ Remotes.OpenChest.OnServerEvent:Connect(function(player, mode)
 		chestLastOpen[uid] = now
 	end
 
-	local reward, owned = doRoll(uid)
-	Remotes.OpenChest:FireClient(player, true, reward, freeRemaining(uid), nil)
+	local owned
+	if mode == "gem10" then
+		-- x10: đảm bảo có ít nhất 1 Rare+ (nếu 9 lượt đầu toàn Common thì lượt 10 ép Rare+).
+		local rolls, gotRare = {}, false
+		for i = 1, 10 do
+			local rw; rw, owned = doRoll(uid, i == 10 and not gotRare)
+			if rw.rarity ~= "Common" then gotRare = true end
+			rolls[i] = rw
+		end
+		Remotes.OpenChest:FireClient(player, true, { multi = true, rolls = rolls },
+			freeRemaining(uid), nil, { n = chestPity[uid] or 0, max = PITY_EPIC })
+		Remotes.HeroState:FireClient(player, GameState.activeHero[uid], owned)
+		return
+	end
+	local reward; reward, owned = doRoll(uid)
+	Remotes.OpenChest:FireClient(player, true, reward, freeRemaining(uid), nil,
+		{ n = chestPity[uid] or 0, max = PITY_EPIC })
 	-- Cập nhật panel My Ship (owned mới) — giữ nguyên con đang lái.
 	Remotes.HeroState:FireClient(player, GameState.activeHero[uid], owned)
 end)

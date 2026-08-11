@@ -461,7 +461,7 @@ local function firstEnemyHit(pr, pos)
 				local cell = col[gz]
 				if cell then
 					for _, u in ipairs(cell) do
-						if u.ownerId ~= pr.ownerId then
+						if not pr.buildingOnly and u.ownerId ~= pr.ownerId then
 							local d = (u.part.Position - pos).Magnitude
 							if d <= pr.radius + (u.radius or 2) and (not bestD or d < bestD) then best, bestD = u, d end
 						end
@@ -471,7 +471,7 @@ local function firstEnemyHit(pr, pos)
 		end
 	end
 	for _, e in pairs(GameState.motherships) do
-		if e.ownerId ~= pr.ownerId and e.alive and e.part then
+		if not pr.buildingOnly and e.ownerId ~= pr.ownerId and e.alive and e.part then
 			local d = (e.part.Position - pos).Magnitude
 			if d <= pr.radius + PROJ_MS_RADIUS and (not bestD or d < bestD) then best, bestD = e, d end
 		end
@@ -498,6 +498,7 @@ local function spawnProjectile(attacker, target)
 	projectiles[#projectiles + 1] = {
 		pos = origin, dir = dir, speed = speed, range = range, traveled = 0,
 		dmg = attacker.dmg, aoe = attacker.aoe or 0, ownerId = attacker.ownerId, radius = r, color = color,
+		buildingOnly = attacker.targeting == "BUILDING_ONLY", -- Siege: đạn chỉ va chạm công trình
 	}
 	-- VFX (client): bay ĐÚNG tới mục tiêu rồi dừng (không xuyên qua) — gửi khoảng cách tới mục tiêu.
 	local visDist = math.min(range, (target.part.Position - origin).Magnitude)

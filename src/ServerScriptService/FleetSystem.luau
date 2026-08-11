@@ -317,7 +317,8 @@ end
 -- => hạm đội càng đông càng nở nhiều vòng ra ngoài, nhìn đồ sộ.
 -- Buffer TÁI SỬ DỤNG (tránh cấp phát bảng mỗi frame -> giảm GC). An toàn vì
 -- server chạy đơn luồng và các hàm dùng buffer không lồng nhau.
-local _b1, _b2, _b3 = {}, {}, {}
+local _fbuckets = {} -- 9 xô theo Config.FORMATION_ORDER (tái dùng, tránh cấp phát mỗi frame)
+for _i = 1, 9 do _fbuckets[_i] = {} end
 local _ordered = {}
 
 -- HEX packing: xếp unit thành lưới LỤC GIÁC (honeycomb), mỗi unit cách hàng xóm đúng S studs.
@@ -350,15 +351,18 @@ local function packRings(list, center, dt, skipCenter)
 	local n = #list
 	if n == 0 then return end
 
-	-- Sắp theo lớp (CORE/GUARD trong -> SCREEN ngoài) để tank ở giữa hex, bia ra rìa.
-	table.clear(_b1); table.clear(_b2); table.clear(_b3); table.clear(_ordered)
-	local buckets = { _b1, _b2, _b3 }
+	-- Sắp theo THỨ TỰ VÒNG 9 lớp (Config.FORMATION_ORDER): 1 = trong cùng -> 9 = ngoài cùng.
+	-- Giữ nguyên thứ tự gốc trong mỗi lớp (ổn định slot, không giật khi cùng loại đông).
+	for _i = 1, 9 do table.clear(_fbuckets[_i]) end
+	table.clear(_ordered)
+	local ORDER = Config.FORMATION_ORDER
 	for _, u in ipairs(list) do
-		table.insert(buckets[RING_LAYER[u.ring] or 3], u)
+		local oi = (ORDER and ORDER[u.unitType]) or 8
+		table.insert(_fbuckets[oi], u)
 	end
 	local ordered = _ordered
-	for L = 1, 3 do
-		for _, u in ipairs(buckets[L]) do table.insert(ordered, u) end
+	for L = 1, 9 do
+		for _, u in ipairs(_fbuckets[L]) do table.insert(ordered, u) end
 	end
 
 	-- Xếp vào lưới LỤC GIÁC quanh center: mỗi unit cách hàng xóm đúng S studs (gap đều),

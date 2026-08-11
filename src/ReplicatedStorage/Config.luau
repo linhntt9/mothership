@@ -318,10 +318,13 @@ Config.UNITS = {
 	-- Bước 2 — pháo công thành: CHỈ bắn Building, tầm xa nhất, bắn chậm có nạp đạn.
 	SiegeRailgun = { -- Ballista
 		displayName = "Siege",
-		cost = 1000, hp = 150, dmg = 120, range = 60, fireRate = 0.25, speed = 20,
-		ring = "CORE", weight = 10, aoeRadius = 0, maxCount = 100,
-		attack = "HITSCAN", targeting = "BUILDING_ONLY",
-		chargeTime = 0.5, -- telegraph: nạp đạn 0.5s trước khi bắn
+		-- PHÁO CÔNG THÀNH: TẦM XA NHẤT game + sát thương công trình cực lớn, NHƯNG chỉ
+		-- phá được CÔNG TRÌNH (kể cả pháo đài Warden) — vô dụng khi đấu quân với quân.
+		-- Reload rất chậm + máu mỏng -> giữa các phát cực dễ bị hạ, cần cung thủ che.
+		cost = 1000, hp = 80, dmg = 600, range = 130, fireRate = 0.14, speed = 20,
+		ring = "CORE", weight = 10, aoeRadius = 0, maxCount = 100, -- aoe=0: đạn đơn, KHÔNG rơi vào quân
+		attack = "HITSCAN", targeting = "BUILDING_ONLY", -- BUILDING_ONLY: bỏ qua mọi Unit & Tàu Mẹ
+		chargeTime = 1.4, -- telegraph: NẠP ĐẠN NẶNG 1.4s (khoảng hở dễ bị tổn thương)
 		projSpeed = 150, projRadius = 2.2, -- (Lordz) nạp xong bắn ĐẠN shell bay (không cờ projectile -> giữ nạp đạn)
 	},
 	-- Bước 3a — CC: mỗi 1/fireRate giây phát sóng xung STUN + đẩy lệch đội hình địch.
@@ -350,6 +353,19 @@ Config.UNITS = {
 Config.UNIT_SIZE = {
 	Drone = 1, Frigate = 1, Destroyer = 1, PlasmaCruiser = 1, Interceptor = 1,
 	Battleship = 1, SiegeRailgun = 1, Titan = 1, Kamikaze = 1,
+}
+
+-- THỨ TỰ VÒNG ĐỘI HÌNH (1 = TRONG CÙNG -> 9 = NGOÀI CÙNG), theo canon Lordz:
+--   ballista > troll > dragon > archer > mage > barbarian > knight > soldier > sapper
+-- Ánh xạ sang Mothership (vai trò tương đương):
+--   SiegeRailgun(ballista/pháo công thành, mỏng manh nhất -> giấu sâu nhất)
+--   Titan(troll/tank khổng lồ) · Battleship(dragon/AoE nặng) · Frigate(archer/cung)
+--   PlasmaCruiser(mage/AoE tầm xa) · Destroyer(barbarian/xáp lá cà trâu)
+--   Interceptor(knight/lao nhanh) · Drone(soldier/lính cơ bản)
+--   Kamikaze(sapper/bom cảm tử -> rìa ngoài để lao vào địch)
+Config.FORMATION_ORDER = {
+	SiegeRailgun = 1, Titan = 2, Battleship = 3, Frigate = 4, PlasmaCruiser = 5,
+	Destroyer = 6, Interceptor = 7, Drone = 8, Kamikaze = 9,
 }
 
 -------------------------------------------------------------------------------
