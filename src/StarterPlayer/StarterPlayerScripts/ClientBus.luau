@@ -30,4 +30,8 @@ ClientBus.openQuests = Instance.new("BindableEvent")
 -- (dev) Cờ hiện vị trí bot trên minimap (bật/tắt từ bảng ⚙). Minimap đọc mỗi lần vẽ.
 ClientBus.showBots = false
 
+-- (mobile lobby) Vector3 | nil: điểm Tàu Mẹ TỰ LÁI tới (chạm cổng -> tàu tự đi vào).
+-- InputController đọc ở nhánh sảnh; huỷ khi người chơi tự kéo tay.
+ClientBus.autoGo = nil
+
 return ClientBus

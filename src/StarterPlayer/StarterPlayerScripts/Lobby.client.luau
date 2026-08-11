@@ -17,6 +17,7 @@ local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local Workspace = game:GetService("Workspace")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local UserInputService = game:GetService("UserInputService")
 
 local Config = require(ReplicatedStorage.Config)
 local Remotes = require(ReplicatedStorage.Remotes)
@@ -85,12 +86,20 @@ local chc = Instance.new("UICorner"); chc.CornerRadius = UDim.new(0, 8); chc.Par
 ctrlHint.Parent = gui
 
 -------------------------------------------------------------------------------
+-- MOBILE: hint riêng + nút/mũi tên "VÀO TRẬN" (chạm cổng -> Tàu Mẹ tự lái vào)
+-------------------------------------------------------------------------------
+local IS_TOUCH = UserInputService.TouchEnabled
+if IS_TOUCH then
+	ctrlHint.Text = "Kéo để di chuyển  ·  Lái tàu vào cổng để vào trận"
+end
+
+-------------------------------------------------------------------------------
 -- Nút panel dọc (icon + label + badge)
 -------------------------------------------------------------------------------
 local function sideButton(parent, order, icon, label, badge, onClick)
 	local b = Instance.new("TextButton")
 	b.LayoutOrder = order
-	b.Size = UDim2.new(0, 88, 0, 80)
+	b.Size = IS_TOUCH and UDim2.new(0, 48, 0, 50) or UDim2.new(0, 88, 0, 80) -- mobile: nhỏ gọn kiểu icon
 	b.BackgroundColor3 = PANEL_BG
 	b.Text = ""
 	local c = Instance.new("UICorner"); c.CornerRadius = UDim.new(0, 12); c.Parent = b
@@ -104,7 +113,7 @@ local function sideButton(parent, order, icon, label, badge, onClick)
 	lb.Size = UDim2.new(1, 0, 0.34, 0); lb.Position = UDim2.new(0, 0, 0.64, 0)
 	lb.BackgroundTransparency = 1; lb.Text = label; lb.TextScaled = true
 	lb.Font = Enum.Font.GothamMedium; lb.TextColor3 = Color3.fromRGB(195, 205, 225)
-	local lc = Instance.new("UITextSizeConstraint"); lc.MaxTextSize = 14; lc.Parent = lb
+	local lc = Instance.new("UITextSizeConstraint"); lc.MaxTextSize = IS_TOUCH and 9 or 14; lc.Parent = lb
 	lb.Parent = b
 	if badge then
 		local d = Instance.new("Frame")
@@ -123,16 +132,23 @@ end
 
 local function sideBar(side)
 	local bar = Instance.new("Frame")
-	bar.AnchorPoint = Vector2.new(side == "left" and 0 or 1, 0.5)
-	bar.Position = side == "left" and UDim2.new(0, 14, 0.5, 20) or UDim2.new(1, -14, 0.5, 20)
-	bar.Size = UDim2.new(0, 88, 0, 420)
+	if IS_TOUCH then
+		-- Mobile: xếp từ TRÊN xuống, bắt đầu dưới cụm trên (menu Roblox trái / xếp hạng+gem phải).
+		bar.AnchorPoint = Vector2.new(side == "left" and 0 or 1, 0)
+		bar.Position = side == "left" and UDim2.new(0, 10, 0, 88) or UDim2.new(1, -10, 0, 148)
+		bar.Size = UDim2.new(0, 48, 0, 4 * 50 + 3 * 5)
+	else
+		bar.AnchorPoint = Vector2.new(side == "left" and 0 or 1, 0.5)
+		bar.Position = side == "left" and UDim2.new(0, 14, 0.5, 20) or UDim2.new(1, -14, 0.5, 20)
+		bar.Size = UDim2.new(0, 88, 0, 420)
+	end
 	bar.BackgroundTransparency = 1
 	bar.Parent = gui
 	local l = Instance.new("UIListLayout")
 	l.FillDirection = Enum.FillDirection.Vertical
 	l.HorizontalAlignment = Enum.HorizontalAlignment.Center
-	l.VerticalAlignment = Enum.VerticalAlignment.Center
-	l.Padding = UDim.new(0, 10); l.SortOrder = Enum.SortOrder.LayoutOrder
+	l.VerticalAlignment = IS_TOUCH and Enum.VerticalAlignment.Top or Enum.VerticalAlignment.Center
+	l.Padding = UDim.new(0, IS_TOUCH and 5 or 10); l.SortOrder = Enum.SortOrder.LayoutOrder
 	l.Parent = bar
 	return bar
 end
@@ -144,11 +160,71 @@ sideButton(leftBar, 3, "📖", "Index", false, function() ClientBus.openIndex:Fi
 sideButton(leftBar, 4, "⚔", "Test", false, function() Remotes.StartTest:FireServer() end)
 
 local openGifts -- (định nghĩa ở khối Gifts bên dưới)
-local rightBar = sideBar("right")
-sideButton(rightBar, 1, "🎁", "Gifts", true, function() if openGifts then openGifts() end end)
-sideButton(rightBar, 2, "✔", "Quest", true, function() ClientBus.openQuests:Fire() end)
-sideButton(rightBar, 3, "🏆", "Rank", false)
-sideButton(rightBar, 4, "🎟", "Pass", true)
+if IS_TOUCH then
+	-- Cụm phải mobile: Gifts+Quest (1 hàng, vuông) · Rank · Pass (2 thanh chữ nhật).
+	local W = 108
+	local rc = Instance.new("Frame")
+	rc.AnchorPoint = Vector2.new(1, 0); rc.Position = UDim2.new(1, -10, 0, 150)
+	rc.Size = UDim2.new(0, W, 0, 150); rc.BackgroundTransparency = 1; rc.Parent = gui
+	local rl = Instance.new("UIListLayout")
+	rl.FillDirection = Enum.FillDirection.Vertical; rl.Padding = UDim.new(0, 6)
+	rl.HorizontalAlignment = Enum.HorizontalAlignment.Right; rl.SortOrder = Enum.SortOrder.LayoutOrder; rl.Parent = rc
+
+	local function addBadge(b)
+		local d = Instance.new("Frame"); d.AnchorPoint = Vector2.new(1, 0); d.Position = UDim2.new(1, -5, 0, 5)
+		d.Size = UDim2.fromOffset(12, 12); d.BackgroundColor3 = Color3.fromRGB(235, 60, 60); d.ZIndex = 3
+		local dc = Instance.new("UICorner"); dc.CornerRadius = UDim.new(1, 0); dc.Parent = d; d.Parent = b
+	end
+	-- Nút vuông (icon + label nhỏ)
+	local function sq(parent, order, icon, label, badge, onClick, w)
+		local b = Instance.new("TextButton"); b.LayoutOrder = order; b.Size = UDim2.new(0, w, 0, 48)
+		b.BackgroundColor3 = PANEL_BG; b.Text = ""
+		local c = Instance.new("UICorner"); c.CornerRadius = UDim.new(0, 10); c.Parent = b
+		local s = Instance.new("UIStroke"); s.Color = Color3.fromRGB(60, 74, 100); s.Thickness = 1.5; s.Transparency = 0.4; s.Parent = b
+		local ic = Instance.new("TextLabel"); ic.Size = UDim2.new(1, 0, 0.6, 0); ic.Position = UDim2.new(0, 0, 0, 4)
+		ic.BackgroundTransparency = 1; ic.Text = icon; ic.TextScaled = true; ic.Font = Enum.Font.GothamBold
+		ic.TextColor3 = Color3.fromRGB(235, 240, 255); ic.Parent = b
+		local lb = Instance.new("TextLabel"); lb.Size = UDim2.new(1, 0, 0.34, 0); lb.Position = UDim2.new(0, 0, 0.64, 0)
+		lb.BackgroundTransparency = 1; lb.Text = label; lb.TextScaled = true; lb.Font = Enum.Font.GothamMedium
+		lb.TextColor3 = Color3.fromRGB(195, 205, 225)
+		local cc = Instance.new("UITextSizeConstraint"); cc.MaxTextSize = 9; cc.Parent = lb; lb.Parent = b
+		if badge then addBadge(b) end
+		b.Activated:Connect(function() if onClick then onClick() else showToast(label .. " — Sắp có (Phase sau)") end end)
+		trackHover(b); b.Parent = parent; return b
+	end
+	-- Thanh chữ nhật (icon trái + chữ)
+	local function wide(order, icon, label, badge, onClick)
+		local b = Instance.new("TextButton"); b.LayoutOrder = order; b.Size = UDim2.new(0, W, 0, 40)
+		b.BackgroundColor3 = PANEL_BG; b.Text = ""
+		local c = Instance.new("UICorner"); c.CornerRadius = UDim.new(0, 10); c.Parent = b
+		local s = Instance.new("UIStroke"); s.Color = Color3.fromRGB(60, 74, 100); s.Thickness = 1.5; s.Transparency = 0.4; s.Parent = b
+		local ic = Instance.new("TextLabel"); ic.AnchorPoint = Vector2.new(0, 0.5); ic.Position = UDim2.new(0, 8, 0.5, 0)
+		ic.Size = UDim2.fromOffset(22, 22); ic.BackgroundTransparency = 1; ic.Text = icon; ic.TextScaled = true
+		ic.Font = Enum.Font.GothamBold; ic.TextColor3 = Color3.fromRGB(235, 240, 255); ic.Parent = b
+		local lb = Instance.new("TextLabel"); lb.AnchorPoint = Vector2.new(0, 0.5); lb.Position = UDim2.new(0, 36, 0.5, 0)
+		lb.Size = UDim2.new(1, -44, 1, 0); lb.BackgroundTransparency = 1; lb.Text = label; lb.Font = Enum.Font.GothamBold
+		lb.TextSize = 14; lb.TextXAlignment = Enum.TextXAlignment.Left; lb.TextColor3 = Color3.fromRGB(220, 228, 245); lb.Parent = b
+		if badge then addBadge(b) end
+		b.Activated:Connect(function() if onClick then onClick() else showToast(label .. " — Sắp có (Phase sau)") end end)
+		trackHover(b); b.Parent = rc; return b
+	end
+
+	local row1 = Instance.new("Frame"); row1.LayoutOrder = 1; row1.Size = UDim2.new(0, W, 0, 48)
+	row1.BackgroundTransparency = 1; row1.Parent = rc
+	local r1l = Instance.new("UIListLayout"); r1l.FillDirection = Enum.FillDirection.Horizontal
+	r1l.Padding = UDim.new(0, 6); r1l.Parent = row1
+	local sqW = (W - 6) / 2
+	sq(row1, 1, "🎁", "Gifts", true, function() if openGifts then openGifts() end end, sqW)
+	sq(row1, 2, "✔", "Quest", true, function() ClientBus.openQuests:Fire() end, sqW)
+	wide(2, "🏆", "Rank", false, nil)
+	wide(3, "🎟", "Pass", true, nil)
+else
+	local rightBar = sideBar("right")
+	sideButton(rightBar, 1, "🎁", "Gifts", true, function() if openGifts then openGifts() end end)
+	sideButton(rightBar, 2, "✔", "Quest", true, function() ClientBus.openQuests:Fire() end)
+	sideButton(rightBar, 3, "🏆", "Rank", false)
+	sideButton(rightBar, 4, "🎟", "Pass", true)
+end
 
 -------------------------------------------------------------------------------
 -- TRÊN: Level + XP (giữa)
@@ -180,48 +256,85 @@ Remotes.LevelUpdate.OnClientEvent:Connect(function(lv)
 end)
 
 -------------------------------------------------------------------------------
--- TRÊN-PHẢI: Leaderboard (placeholder) + Gems
+-- TRÊN-PHẢI: Xếp hạng (3 dòng nhỏ: avatar · tên · điểm) + Gems
 -------------------------------------------------------------------------------
+local LB_W = IS_TOUCH and 168 or 200
 local lbBox = Instance.new("Frame")
 lbBox.AnchorPoint = Vector2.new(1, 0)
-lbBox.Position = UDim2.new(1, -14, 0, 12)
-lbBox.Size = UDim2.new(0, 190, 0, 86)
+lbBox.Position = UDim2.new(1, IS_TOUCH and -10 or -14, 0, IS_TOUCH and 10 or 12)
+lbBox.Size = UDim2.new(0, LB_W, 0, 92)
 lbBox.BackgroundColor3 = PANEL_BG2; lbBox.BackgroundTransparency = 0.2
 local lbc = Instance.new("UICorner"); lbc.CornerRadius = UDim.new(0, 10); lbc.Parent = lbBox
 lbBox.Parent = gui
 local lbTitle = Instance.new("TextLabel")
-lbTitle.Size = UDim2.new(1, 0, 0, 24); lbTitle.BackgroundTransparency = 1
-lbTitle.Text = "🏆 XẾP HẠNG"; lbTitle.Font = Enum.Font.GothamBold; lbTitle.TextSize = 13
+lbTitle.Position = UDim2.new(0, 0, 0, 5); lbTitle.Size = UDim2.new(1, 0, 0, 16); lbTitle.BackgroundTransparency = 1
+lbTitle.Text = "🏆 XẾP HẠNG"; lbTitle.Font = Enum.Font.GothamBold; lbTitle.TextSize = 12
 lbTitle.TextColor3 = Color3.fromRGB(255, 220, 120); lbTitle.Parent = lbBox
-local lbBody = Instance.new("TextLabel")
-lbBody.Position = UDim2.new(0, 8, 0, 26); lbBody.Size = UDim2.new(1, -16, 1, -30)
-lbBody.BackgroundTransparency = 1; lbBody.Font = Enum.Font.Gotham; lbBody.TextSize = 13
-lbBody.TextColor3 = Color3.fromRGB(200, 210, 225); lbBody.TextXAlignment = Enum.TextXAlignment.Left
-lbBody.TextYAlignment = Enum.TextYAlignment.Top; lbBody.Text = "Chơi để leo hạng!"; lbBody.TextWrapped = true
-lbBody.Parent = lbBox
+
+local lbEmpty = Instance.new("TextLabel")
+lbEmpty.Position = UDim2.new(0, 8, 0, 24); lbEmpty.Size = UDim2.new(1, -16, 1, -28); lbEmpty.BackgroundTransparency = 1
+lbEmpty.Font = Enum.Font.Gotham; lbEmpty.TextSize = 12; lbEmpty.TextColor3 = Color3.fromRGB(190, 200, 220)
+lbEmpty.Text = "Chơi để leo hạng!"; lbEmpty.TextWrapped = true; lbEmpty.Parent = lbBox
+
+local lbRows = Instance.new("Frame")
+lbRows.Position = UDim2.new(0, 6, 0, 23); lbRows.Size = UDim2.new(1, -12, 1, -27); lbRows.BackgroundTransparency = 1
+lbRows.Visible = false; lbRows.Parent = lbBox
+local lbrl = Instance.new("UIListLayout"); lbrl.Padding = UDim.new(0, 2); lbrl.SortOrder = Enum.SortOrder.LayoutOrder; lbrl.Parent = lbRows
+
+local MEDAL = { Color3.fromRGB(255, 205, 70), Color3.fromRGB(200, 210, 225), Color3.fromRGB(205, 140, 90) }
+local function lbRow(i, entry)
+	local row = Instance.new("Frame"); row.LayoutOrder = i; row.Size = UDim2.new(1, 0, 0, 20)
+	row.BackgroundTransparency = 1; row.Parent = lbRows
+	local av = Instance.new("ImageLabel"); av.AnchorPoint = Vector2.new(0, 0.5); av.Position = UDim2.new(0, 0, 0.5, 0)
+	av.Size = UDim2.fromOffset(18, 18); av.BackgroundColor3 = MEDAL[i] or Color3.fromRGB(70, 90, 120)
+	av.BorderSizePixel = 0; av.Image = ""
+	local ac = Instance.new("UICorner"); ac.CornerRadius = UDim.new(1, 0); ac.Parent = av; av.Parent = row
+	if entry.id and entry.id > 0 then
+		task.spawn(function()
+			local ok, img = pcall(function()
+				return Players:GetUserThumbnailAsync(entry.id, Enum.ThumbnailType.HeadShot, Enum.ThumbnailSize.Size48x48)
+			end)
+			if ok and img and av.Parent then av.Image = img end
+		end)
+	end
+	local nm = Instance.new("TextLabel"); nm.Position = UDim2.new(0, 24, 0, 0); nm.Size = UDim2.new(1, -66, 1, 0)
+	nm.BackgroundTransparency = 1; nm.Font = Enum.Font.GothamBold; nm.TextSize = 12
+	nm.TextXAlignment = Enum.TextXAlignment.Left; nm.TextTruncate = Enum.TextTruncate.AtEnd
+	nm.TextColor3 = (entry.id == player.UserId) and Color3.fromRGB(120, 255, 140) or Color3.fromRGB(225, 230, 240)
+	nm.Text = i .. ". " .. (entry.name or "?"); nm.Parent = row
+	local sc = Instance.new("TextLabel"); sc.AnchorPoint = Vector2.new(1, 0); sc.Position = UDim2.new(1, 0, 0, 0)
+	sc.Size = UDim2.new(0, 42, 1, 0); sc.BackgroundTransparency = 1; sc.Font = Enum.Font.GothamBold; sc.TextSize = 12
+	sc.TextXAlignment = Enum.TextXAlignment.Right; sc.TextColor3 = Color3.fromRGB(255, 210, 100)
+	sc.Text = tostring(entry.score or 0); sc.Parent = row
+end
+Remotes.Leaderboard.OnClientEvent:Connect(function(list)
+	for _, c in ipairs(lbRows:GetChildren()) do if c:IsA("Frame") then c:Destroy() end end
+	if not list or #list == 0 then lbEmpty.Visible = true; lbRows.Visible = false; return end
+	lbEmpty.Visible = false; lbRows.Visible = true
+	for i = 1, math.min(3, #list) do lbRow(i, list[i]) end
+end)
 
 local gemChip = Instance.new("Frame")
 gemChip.AnchorPoint = Vector2.new(1, 0)
-gemChip.Position = UDim2.new(1, -14, 0, 104)
-gemChip.Size = UDim2.new(0, 190, 0, 40)
+gemChip.Position = UDim2.new(1, IS_TOUCH and -10 or -14, 0, IS_TOUCH and 108 or 112)
+gemChip.Size = UDim2.new(0, LB_W, 0, IS_TOUCH and 34 or 40)
 gemChip.BackgroundColor3 = PANEL_BG2; gemChip.BackgroundTransparency = 0.2
 local ggc = Instance.new("UICorner"); ggc.CornerRadius = UDim.new(0, 10); ggc.Parent = gemChip
 gemChip.Parent = gui
 local gemText = Instance.new("TextLabel")
-gemText.Size = UDim2.new(1, -50, 1, 0); gemText.Position = UDim2.new(0, 12, 0, 0)
+gemText.Size = UDim2.new(1, -46, 1, 0); gemText.Position = UDim2.new(0, 12, 0, 0)
 gemText.BackgroundTransparency = 1; gemText.Text = "💎 0"; gemText.Font = Enum.Font.GothamBold
-gemText.TextSize = 18; gemText.TextColor3 = Color3.fromRGB(150, 230, 255)
+gemText.TextSize = IS_TOUCH and 15 or 18; gemText.TextColor3 = Color3.fromRGB(150, 230, 255)
 gemText.TextXAlignment = Enum.TextXAlignment.Left; gemText.Parent = gemChip
 local gemPlus = Instance.new("TextButton")
 gemPlus.AnchorPoint = Vector2.new(1, 0.5); gemPlus.Position = UDim2.new(1, -6, 0.5, 0)
-gemPlus.Size = UDim2.fromOffset(32, 32); gemPlus.BackgroundColor3 = Color3.fromRGB(60, 180, 90)
-gemPlus.Text = "+"; gemPlus.Font = Enum.Font.GothamBlack; gemPlus.TextSize = 22
+gemPlus.Size = UDim2.fromOffset(IS_TOUCH and 26 or 32, IS_TOUCH and 26 or 32); gemPlus.BackgroundColor3 = Color3.fromRGB(60, 180, 90)
+gemPlus.Text = "+"; gemPlus.Font = Enum.Font.GothamBlack; gemPlus.TextSize = 20
 gemPlus.TextColor3 = Color3.fromRGB(255, 255, 255)
 local gpc = Instance.new("UICorner"); gpc.CornerRadius = UDim.new(0, 8); gpc.Parent = gemPlus
 gemPlus.Parent = gemChip
 gemPlus.Activated:Connect(function() showToast("Mua Gems (Robux) — Sắp có") end)
 trackHover(gemPlus)
--- Gem kiếm được khi chiến đấu (server lưu theo player) -> hiện ở sảnh.
 Remotes.GemUpdate.OnClientEvent:Connect(function(g)
 	gemText.Text = "💎 " .. tostring(g)
 end)
@@ -684,6 +797,7 @@ RunService.RenderStepped:Connect(function(dt)
 		chestRemaining = math.max(0, chestRemaining - dt)
 		if chestPanel.Visible then refreshChest() end
 	end
+
 	acc += dt
 	if acc < 0.1 then return end
 	acc = 0
