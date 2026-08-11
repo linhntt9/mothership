@@ -135,7 +135,7 @@ local function sideBar(side)
 	if IS_TOUCH then
 		-- Mobile: xếp từ TRÊN xuống, bắt đầu dưới cụm trên (menu Roblox trái / xếp hạng+gem phải).
 		bar.AnchorPoint = Vector2.new(side == "left" and 0 or 1, 0)
-		bar.Position = side == "left" and UDim2.new(0, 10, 0, 88) or UDim2.new(1, -10, 0, 148)
+		bar.Position = side == "left" and UDim2.new(0, 10, 0, 132) or UDim2.new(1, -10, 0, 148)
 		bar.Size = UDim2.new(0, 48, 0, 4 * 50 + 3 * 5)
 	else
 		bar.AnchorPoint = Vector2.new(side == "left" and 0 or 1, 0.5)

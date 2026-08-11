@@ -344,7 +344,14 @@ if isTouch then
 			if bpart and bpart:GetAttribute("OwnerUserId") == player.UserId then
 				ClientBus.selectBuilding:Fire(bpart) -- nhà mình -> nâng cấp/bán
 			else
-				setFocus(enemyPartUnderCursor(pos)) -- tap tàu/quân địch -> CẢ fleet focus-fire; trống -> bỏ
+				local enemy = enemyPartUnderCursor(pos)
+				if enemy then
+					setFocus(enemy) -- tap tàu/quân địch -> CẢ fleet focus-fire (đội split lao vào địch)
+				else
+					setFocus(nil) -- bỏ focus...
+					local pt = cursorWorldPoint(pos)
+					if pt then Remotes.SplitAim:FireServer(pt) end -- ...và LÁI đội split tới điểm tap (nếu đang split)
+				end
 				ClientBus.selectBuilding:Fire(nil)
 			end
 		end

@@ -37,6 +37,7 @@ local EVENT_NAMES = {
 	"Restart",     -- (M2) client -> server: reset ván chơi
 	"SplitInput",  -- (M3) client -> server: bấm Space = phân hạch +1 bậc (Lordz)
 	"AimInput",    -- client -> server: con trỏ THÔ (không kẹp leash) -> vệ tinh split chase
+	"SplitAim",    -- (mobile) client -> server: tap điểm trống khi ĐANG SPLIT -> lái đội split tới đó
 	"SetAttackTarget", -- client -> server: click 1 đối tượng địch -> CẢ fleet focus-fire (nil = bỏ)
 	-- M4 — Economy & Buildings
 	"ScrapUpdate",     -- server -> client: số scrap hiện tại

@@ -573,6 +573,7 @@ local function updateFormation(dt)
 				if C <= 1 then
 					-- 1 cụm: đội hình quanh Tàu Mẹ; xoá state vệ tinh -> split sau bung lại từ đầu.
 					owner.splitOffset = Vector3.zero -- hợp về 1 đội -> reset offset
+					owner.splitAimPoint = nil        -- hết split -> xoá điểm tap (split sau bắt đầu lại)
 					packRings(_ownerList, center, dt, true) -- hex quanh Tàu Mẹ (chừa ô giữa cho ship)
 				else
 					-- Chia round-robin: cụm 1 = VUA (bám Tàu Mẹ), cụm 2..C = vệ tinh CHASE con trỏ.
@@ -593,10 +594,18 @@ local function updateFormation(dt)
 							dist = math.clamp(mm, F.SPLIT_FIXED_DIST or 65, F.SPLIT_TARGET_MAX or 200)
 						end
 						if not dir then
-							local f = owner.facing or Vector3.new(1, 0, 0)
+							-- ƯU TIÊN điểm TAP (mobile): lái đội split tới 1 vị trí; không có thì theo hướng đi.
+							local ap = owner.splitAimPoint
+							local f
+							if ap then
+								f = Vector3.new(ap.X - center.X, 0, ap.Z - center.Z)
+							else
+								f = owner.facing or Vector3.new(1, 0, 0)
+							end
 							local mm = math.sqrt(f.X * f.X + f.Z * f.Z)
 							dir = mm > 1e-3 and Vector3.new(f.X / mm, 0, f.Z / mm) or Vector3.new(1, 0, 0)
-							dist = F.SPLIT_FIXED_DIST or 65
+							dist = ap and math.clamp(mm, F.SPLIT_FIXED_DIST or 65, F.SPLIT_TARGET_MAX or 200)
+								or (F.SPLIT_FIXED_DIST or 65)
 						end
 						local desired = dir * dist
 						local cur = owner.splitOffset or Vector3.zero
@@ -636,6 +645,15 @@ local function onAimInput(player, pt)
 	if typeof(pt) ~= "Vector3" then return end
 	local owner = GameState.motherships[player.UserId]
 	if owner then owner.aimPoint = pt end
+end
+
+-- (Mobile) Tap 1 điểm trống trên map khi ĐANG SPLIT -> đặt điểm lái cho ĐỘI SPLIT (cụm 2).
+-- Chỉ có tác dụng khi đang tách (cụm 2 tồn tại); tự xoá khi gộp về 1 đội (updateFormation).
+-- Ưu tiên THẤP hơn attackTarget: nếu đang focus địch thì bay vào địch, không thì bay tới điểm tap.
+local function onSplitAim(player, pt)
+	if typeof(pt) ~= "Vector3" then return end
+	local owner = GameState.motherships[player.UserId]
+	if owner then owner.splitAimPoint = pt end
 end
 
 -- Đẩy tách các unit đè lên nhau (kể cả khác phe khi chạm trán) để không overlap.
@@ -764,6 +782,7 @@ function FleetSystem.init()
 	-- Mua unit (SpawnUnit) do EconomySystem xử lý (có trừ scrap).
 	Remotes.SplitInput.OnServerEvent:Connect(onSplitInput)
 	Remotes.AimInput.OnServerEvent:Connect(onAimInput)
+	Remotes.SplitAim.OnServerEvent:Connect(onSplitAim)
 
 	RunService.Heartbeat:Connect(function(dt)
 		cleanupUnits()

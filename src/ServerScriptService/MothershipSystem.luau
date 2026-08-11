@@ -306,6 +306,7 @@ function MothershipSystem.spawn(ownerId, isBot, spawnPos, teamColor)
 		rejoining = false,
 		rejoinNext = 0,
 		aimPoint = nil,
+		splitAimPoint = nil, -- (mobile) tap điểm trống khi split -> lái đội split tới đó
 		satState = nil,
 		attackTarget = nil, -- focus-fire: entity người chơi click để cả fleet nhắm (nil = auto)
 		-- Combat: mothership cũng tự bắn (dùng chung fire logic với unit ở CombatSystem)

@@ -178,10 +178,13 @@ gui.IgnoreGuiInset = true
 gui.DisplayOrder = 50
 gui.Parent = playerGui
 
--- Nút mở/đóng
+-- Nút mở/đóng. Mobile: đẩy xuống DƯỚI Unibar Roblox + lùi phải khỏi notch (né "vướng").
+local CFG_TOUCH = game:GetService("UserInputService").TouchEnabled
+local CFG_X = CFG_TOUCH and 56 or 12
+local CFG_Y = CFG_TOUCH and 76 or 52
 local toggle = Instance.new("TextButton")
 toggle.Size = UDim2.new(0, 40, 0, 40)
-toggle.Position = UDim2.new(0, 12, 0, 52) -- dưới topbar Roblox, cạnh trái nút Lobby
+toggle.Position = UDim2.new(0, CFG_X, 0, CFG_Y)
 toggle.BackgroundColor3 = Color3.fromRGB(40, 46, 60)
 toggle.TextColor3 = Color3.fromRGB(255, 255, 255)
 toggle.Font = Enum.Font.GothamBold
@@ -193,7 +196,7 @@ toggle.Parent = gui
 -- Khung panel
 local panel = Instance.new("Frame")
 panel.Size = UDim2.new(0, 340, 0, 460)
-panel.Position = UDim2.new(0, 12, 0, 98)
+panel.Position = UDim2.new(0, CFG_X, 0, CFG_Y + 46)
 panel.BackgroundColor3 = Color3.fromRGB(18, 22, 32)
 panel.BackgroundTransparency = 0.05
 panel.Active = true        -- hút input, không lọt xuống thao tác game

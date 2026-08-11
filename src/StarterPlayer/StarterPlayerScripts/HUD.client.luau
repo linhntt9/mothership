@@ -302,7 +302,7 @@ hint.Parent = gui
 -------------------------------------------------------------------------------
 local backBtn = Instance.new("TextButton")
 backBtn.Name = "BackToLobby"
-backBtn.Position = UDim2.new(0, 58, 0, 52)
+backBtn.Position = UserInputService.TouchEnabled and UDim2.new(0, 104, 0, 76) or UDim2.new(0, 58, 0, 52) -- mobile: cạnh ⚙, dưới Unibar
 backBtn.Size = UDim2.new(0, 104, 0, 34)
 backBtn.BackgroundColor3 = Color3.fromRGB(70, 120, 220)
 backBtn.Font = Enum.Font.GothamBold
