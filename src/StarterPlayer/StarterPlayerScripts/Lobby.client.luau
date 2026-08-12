@@ -132,11 +132,15 @@ end
 
 local function sideBar(side)
 	local bar = Instance.new("Frame")
+	local mobileLeftGrid = IS_TOUCH and side == "left" -- trái mobile: lưới 2×2
 	if IS_TOUCH then
-		-- Mobile: xếp từ TRÊN xuống, bắt đầu dưới cụm trên (menu Roblox trái / xếp hạng+gem phải).
 		bar.AnchorPoint = Vector2.new(side == "left" and 0 or 1, 0)
 		bar.Position = side == "left" and UDim2.new(0, 10, 0, 132) or UDim2.new(1, -10, 0, 148)
-		bar.Size = UDim2.new(0, 48, 0, 4 * 50 + 3 * 5)
+		if mobileLeftGrid then
+			bar.Size = UDim2.new(0, 48 * 2 + 6, 0, 50 * 2 + 6) -- 2 cột × 2 hàng
+		else
+			bar.Size = UDim2.new(0, 48, 0, 4 * 50 + 3 * 5)
+		end
 	else
 		bar.AnchorPoint = Vector2.new(side == "left" and 0 or 1, 0.5)
 		bar.Position = side == "left" and UDim2.new(0, 14, 0.5, 20) or UDim2.new(1, -14, 0.5, 20)
@@ -144,12 +148,18 @@ local function sideBar(side)
 	end
 	bar.BackgroundTransparency = 1
 	bar.Parent = gui
-	local l = Instance.new("UIListLayout")
-	l.FillDirection = Enum.FillDirection.Vertical
-	l.HorizontalAlignment = Enum.HorizontalAlignment.Center
-	l.VerticalAlignment = IS_TOUCH and Enum.VerticalAlignment.Top or Enum.VerticalAlignment.Center
-	l.Padding = UDim.new(0, IS_TOUCH and 5 or 10); l.SortOrder = Enum.SortOrder.LayoutOrder
-	l.Parent = bar
+	if mobileLeftGrid then
+		local g = Instance.new("UIGridLayout")
+		g.CellSize = UDim2.fromOffset(48, 50); g.CellPadding = UDim2.fromOffset(6, 6)
+		g.FillDirectionMaxCells = 2; g.SortOrder = Enum.SortOrder.LayoutOrder; g.Parent = bar
+	else
+		local l = Instance.new("UIListLayout")
+		l.FillDirection = Enum.FillDirection.Vertical
+		l.HorizontalAlignment = Enum.HorizontalAlignment.Center
+		l.VerticalAlignment = IS_TOUCH and Enum.VerticalAlignment.Top or Enum.VerticalAlignment.Center
+		l.Padding = UDim.new(0, IS_TOUCH and 5 or 10); l.SortOrder = Enum.SortOrder.LayoutOrder
+		l.Parent = bar
+	end
 	return bar
 end
 
@@ -164,7 +174,7 @@ if IS_TOUCH then
 	-- Cụm phải mobile: Gifts+Quest (1 hàng, vuông) · Rank · Pass (2 thanh chữ nhật).
 	local W = 108
 	local rc = Instance.new("Frame")
-	rc.AnchorPoint = Vector2.new(1, 0); rc.Position = UDim2.new(1, -10, 0, 150)
+	rc.AnchorPoint = Vector2.new(1, 0); rc.Position = UDim2.new(1, -10, 0, 52)
 	rc.Size = UDim2.new(0, W, 0, 150); rc.BackgroundTransparency = 1; rc.Parent = gui
 	local rl = Instance.new("UIListLayout")
 	rl.FillDirection = Enum.FillDirection.Vertical; rl.Padding = UDim.new(0, 6)
@@ -256,67 +266,12 @@ Remotes.LevelUpdate.OnClientEvent:Connect(function(lv)
 end)
 
 -------------------------------------------------------------------------------
--- TRÊN-PHẢI: Xếp hạng (3 dòng nhỏ: avatar · tên · điểm) + Gems
+-- TRÊN-PHẢI: Gems (đã bỏ bảng Xếp hạng theo yêu cầu)
 -------------------------------------------------------------------------------
 local LB_W = IS_TOUCH and 168 or 200
-local lbBox = Instance.new("Frame")
-lbBox.AnchorPoint = Vector2.new(1, 0)
-lbBox.Position = UDim2.new(1, IS_TOUCH and -10 or -14, 0, IS_TOUCH and 10 or 12)
-lbBox.Size = UDim2.new(0, LB_W, 0, 92)
-lbBox.BackgroundColor3 = PANEL_BG2; lbBox.BackgroundTransparency = 0.2
-local lbc = Instance.new("UICorner"); lbc.CornerRadius = UDim.new(0, 10); lbc.Parent = lbBox
-lbBox.Parent = gui
-local lbTitle = Instance.new("TextLabel")
-lbTitle.Position = UDim2.new(0, 0, 0, 5); lbTitle.Size = UDim2.new(1, 0, 0, 16); lbTitle.BackgroundTransparency = 1
-lbTitle.Text = "🏆 XẾP HẠNG"; lbTitle.Font = Enum.Font.GothamBold; lbTitle.TextSize = 12
-lbTitle.TextColor3 = Color3.fromRGB(255, 220, 120); lbTitle.Parent = lbBox
-
-local lbEmpty = Instance.new("TextLabel")
-lbEmpty.Position = UDim2.new(0, 8, 0, 24); lbEmpty.Size = UDim2.new(1, -16, 1, -28); lbEmpty.BackgroundTransparency = 1
-lbEmpty.Font = Enum.Font.Gotham; lbEmpty.TextSize = 12; lbEmpty.TextColor3 = Color3.fromRGB(190, 200, 220)
-lbEmpty.Text = "Chơi để leo hạng!"; lbEmpty.TextWrapped = true; lbEmpty.Parent = lbBox
-
-local lbRows = Instance.new("Frame")
-lbRows.Position = UDim2.new(0, 6, 0, 23); lbRows.Size = UDim2.new(1, -12, 1, -27); lbRows.BackgroundTransparency = 1
-lbRows.Visible = false; lbRows.Parent = lbBox
-local lbrl = Instance.new("UIListLayout"); lbrl.Padding = UDim.new(0, 2); lbrl.SortOrder = Enum.SortOrder.LayoutOrder; lbrl.Parent = lbRows
-
-local MEDAL = { Color3.fromRGB(255, 205, 70), Color3.fromRGB(200, 210, 225), Color3.fromRGB(205, 140, 90) }
-local function lbRow(i, entry)
-	local row = Instance.new("Frame"); row.LayoutOrder = i; row.Size = UDim2.new(1, 0, 0, 20)
-	row.BackgroundTransparency = 1; row.Parent = lbRows
-	local av = Instance.new("ImageLabel"); av.AnchorPoint = Vector2.new(0, 0.5); av.Position = UDim2.new(0, 0, 0.5, 0)
-	av.Size = UDim2.fromOffset(18, 18); av.BackgroundColor3 = MEDAL[i] or Color3.fromRGB(70, 90, 120)
-	av.BorderSizePixel = 0; av.Image = ""
-	local ac = Instance.new("UICorner"); ac.CornerRadius = UDim.new(1, 0); ac.Parent = av; av.Parent = row
-	if entry.id and entry.id > 0 then
-		task.spawn(function()
-			local ok, img = pcall(function()
-				return Players:GetUserThumbnailAsync(entry.id, Enum.ThumbnailType.HeadShot, Enum.ThumbnailSize.Size48x48)
-			end)
-			if ok and img and av.Parent then av.Image = img end
-		end)
-	end
-	local nm = Instance.new("TextLabel"); nm.Position = UDim2.new(0, 24, 0, 0); nm.Size = UDim2.new(1, -66, 1, 0)
-	nm.BackgroundTransparency = 1; nm.Font = Enum.Font.GothamBold; nm.TextSize = 12
-	nm.TextXAlignment = Enum.TextXAlignment.Left; nm.TextTruncate = Enum.TextTruncate.AtEnd
-	nm.TextColor3 = (entry.id == player.UserId) and Color3.fromRGB(120, 255, 140) or Color3.fromRGB(225, 230, 240)
-	nm.Text = i .. ". " .. (entry.name or "?"); nm.Parent = row
-	local sc = Instance.new("TextLabel"); sc.AnchorPoint = Vector2.new(1, 0); sc.Position = UDim2.new(1, 0, 0, 0)
-	sc.Size = UDim2.new(0, 42, 1, 0); sc.BackgroundTransparency = 1; sc.Font = Enum.Font.GothamBold; sc.TextSize = 12
-	sc.TextXAlignment = Enum.TextXAlignment.Right; sc.TextColor3 = Color3.fromRGB(255, 210, 100)
-	sc.Text = tostring(entry.score or 0); sc.Parent = row
-end
-Remotes.Leaderboard.OnClientEvent:Connect(function(list)
-	for _, c in ipairs(lbRows:GetChildren()) do if c:IsA("Frame") then c:Destroy() end end
-	if not list or #list == 0 then lbEmpty.Visible = true; lbRows.Visible = false; return end
-	lbEmpty.Visible = false; lbRows.Visible = true
-	for i = 1, math.min(3, #list) do lbRow(i, list[i]) end
-end)
-
 local gemChip = Instance.new("Frame")
 gemChip.AnchorPoint = Vector2.new(1, 0)
-gemChip.Position = UDim2.new(1, IS_TOUCH and -10 or -14, 0, IS_TOUCH and 108 or 112)
+gemChip.Position = UDim2.new(1, IS_TOUCH and -10 or -14, 0, IS_TOUCH and 10 or 12)
 gemChip.Size = UDim2.new(0, LB_W, 0, IS_TOUCH and 34 or 40)
 gemChip.BackgroundColor3 = PANEL_BG2; gemChip.BackgroundTransparency = 0.2
 local ggc = Instance.new("UICorner"); ggc.CornerRadius = UDim.new(0, 10); ggc.Parent = gemChip
@@ -379,8 +334,15 @@ local CHEST_GOLD = Color3.fromRGB(255, 205, 70)
 local chestRemaining = 0 -- giây còn lại tới lần mở kế (server là nguồn chuẩn)
 
 local chestPanel = Instance.new("Frame")
-chestPanel.AnchorPoint = Vector2.new(0.5, 0.5); chestPanel.Position = UDim2.new(0.5, 0, 0.46, 0)
-chestPanel.Size = UDim2.new(0, 420, 0, 440); chestPanel.BackgroundColor3 = PANEL_BG; chestPanel.Visible = false
+if IS_TOUCH then
+	chestPanel.AnchorPoint = Vector2.new(0.5, 0); chestPanel.Position = UDim2.new(0.5, 0, 0, 46)
+	chestPanel.Size = UDim2.new(0.7, 0, 0.84, 0)
+	local szc = Instance.new("UISizeConstraint"); szc.MaxSize = Vector2.new(420, 440); szc.Parent = chestPanel
+else
+	chestPanel.AnchorPoint = Vector2.new(0.5, 0.5); chestPanel.Position = UDim2.new(0.5, 0, 0.46, 0)
+	chestPanel.Size = UDim2.new(0, 420, 0, 440)
+end
+chestPanel.BackgroundColor3 = PANEL_BG; chestPanel.Visible = false
 local ccc = Instance.new("UICorner"); ccc.CornerRadius = UDim.new(0, 16); ccc.Parent = chestPanel
 local ccs = Instance.new("UIStroke"); ccs.Thickness = 2; ccs.Color = CHEST_GOLD; ccs.Transparency = 0.25; ccs.Parent = chestPanel
 chestPanel.Parent = gui
@@ -834,8 +796,15 @@ giftsDim.Size = UDim2.new(1, 0, 1, 0); giftsDim.BackgroundTransparency = 1; gift
 giftsDim.AutoButtonColor = false; giftsDim.ZIndex = 60; giftsDim.Parent = giftsGui
 
 local giftPanel = Instance.new("Frame")
-giftPanel.AnchorPoint = Vector2.new(0.5, 0.5); giftPanel.Position = UDim2.new(0.5, 0, 0.5, 0)
-giftPanel.Size = UDim2.new(0, 636, 0, 520); giftPanel.BackgroundColor3 = PANEL_BG
+if IS_TOUCH then
+	giftPanel.AnchorPoint = Vector2.new(0.5, 0); giftPanel.Position = UDim2.new(0.5, 0, 0, 46)
+	giftPanel.Size = UDim2.new(0.92, 0, 0.84, 0)
+	local szc = Instance.new("UISizeConstraint"); szc.MaxSize = Vector2.new(636, 520); szc.Parent = giftPanel
+else
+	giftPanel.AnchorPoint = Vector2.new(0.5, 0.5); giftPanel.Position = UDim2.new(0.5, 0, 0.5, 0)
+	giftPanel.Size = UDim2.new(0, 636, 0, 520)
+end
+giftPanel.BackgroundColor3 = PANEL_BG
 giftPanel.ZIndex = 61; giftPanel.Parent = giftsGui
 local gpc = Instance.new("UICorner"); gpc.CornerRadius = UDim.new(0, 18); gpc.Parent = giftPanel
 local gps = Instance.new("UIStroke"); gps.Thickness = 2; gps.Color = Color3.fromRGB(90, 180, 255); gps.Transparency = 0.4; gps.Parent = giftPanel

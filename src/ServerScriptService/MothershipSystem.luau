@@ -404,12 +404,13 @@ local function usedWeight(ownerId)
 	return w
 end
 
--- Di chuyển 1 mothership 1 bước theo dt.
+-- Di chuyển 1 mothership 1 bước theo dt. Trả về true NẾU CÓ dời vị trí (để loop chỉ
+-- cập nhật deco khi tàu thực sự di chuyển -> đỡ ngập replicate khi đứng yên).
 local function stepMothership(entry, dt)
-	if not entry.alive then return end
+	if not entry.alive then return false end
 	if MatchState.isMatch() then updateOOB(entry) end -- đếm giờ OOB (chạy cả khi đứng yên)
 	-- Đang channel build -> khoá di chuyển (tạo "khoảnh khắc sơ hở")
-	if entry.channel then return end
+	if entry.channel then return false end
 	local pos = entry.part.Position
 	local target = entry.targetPoint
 
@@ -417,7 +418,7 @@ local function stepMothership(entry, dt)
 	local dist = Util.flatDist(pos, target)
 
 	if dist <= Config.MOTHERSHIP.STOP_DIST or dir == Vector3.zero then
-		return -- đã tới nơi -> đứng yên, giữ nguyên facing cũ
+		return false -- đã tới nơi -> đứng yên, giữ nguyên facing cũ
 	end
 
 	-- Tốc độ giảm theo tải hạm đội: nhiều quân -> nặng -> chậm
@@ -442,6 +443,7 @@ local function stepMothership(entry, dt)
 
 	entry.part.Position = newPos
 	entry.facing = dir -- cập nhật hướng đang đi (dùng cho Split sau này)
+	return true
 end
 
 function MothershipSystem.init()
@@ -465,7 +467,7 @@ function MothershipSystem.init()
 
 	RunService.Heartbeat:Connect(function(dt)
 		for _, entry in pairs(GameState.motherships) do
-			stepMothership(entry, dt)
+			local moved = stepMothership(entry, dt)
 
 			-- Tự hồi máu khi RA KHỎI giao tranh (không trúng đòn trong REGEN_DELAY giây).
 			if entry.alive and Config.MOTHERSHIP.REGEN_RATE > 0 and entry.hp < entry.maxHp then
@@ -475,8 +477,9 @@ function MothershipSystem.init()
 				end
 			end
 
-			-- Deco 3D bám theo thân mỗi frame (anchored -> phải tự set CFrame).
-			if entry.deco and entry.part then
+			-- Deco 3D bám theo thân — CHỈ cập nhật khi tàu DI CHUYỂN (đứng yên thì giữ
+			-- nguyên -> giảm mạnh replicate CFrame trên mobile).
+			if moved and entry.deco and entry.part then
 				local bcf = entry.part.CFrame
 				for _, d in ipairs(entry.deco) do
 					if d.part and d.part.Parent then

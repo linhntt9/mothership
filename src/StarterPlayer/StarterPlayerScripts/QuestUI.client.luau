@@ -12,6 +12,7 @@
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local IS_TOUCH = game:GetService("UserInputService").TouchEnabled
 
 local Remotes = require(ReplicatedStorage.Remotes)
 local ClientBus = require(script.Parent.ClientBus)
@@ -54,8 +55,15 @@ dim.Size = UDim2.new(1, 0, 1, 0); dim.BackgroundColor3 = Color3.new(0, 0, 0)
 dim.BackgroundTransparency = 0.45; dim.Text = ""; dim.AutoButtonColor = false; dim.ZIndex = 1; dim.Parent = gui
 
 local panel = Instance.new("Frame")
-panel.AnchorPoint = Vector2.new(0.5, 0.5); panel.Position = UDim2.new(0.5, 0, 0.5, 0)
-panel.Size = UDim2.new(0, 640, 0, 500); panel.BackgroundColor3 = PANEL_BG; panel.ZIndex = 2; panel.Parent = gui
+if IS_TOUCH then
+	panel.AnchorPoint = Vector2.new(0.5, 0); panel.Position = UDim2.new(0.5, 0, 0, 46)
+	panel.Size = UDim2.new(0.9, 0, 0.82, 0)
+	local szc = Instance.new("UISizeConstraint"); szc.MaxSize = Vector2.new(640, 500); szc.Parent = panel
+else
+	panel.AnchorPoint = Vector2.new(0.5, 0.5); panel.Position = UDim2.new(0.5, 0, 0.5, 0)
+	panel.Size = UDim2.new(0, 640, 0, 500)
+end
+panel.BackgroundColor3 = PANEL_BG; panel.ZIndex = 2; panel.Parent = gui
 local pc = Instance.new("UICorner"); pc.CornerRadius = UDim.new(0, 18); pc.Parent = panel
 local ps = Instance.new("UIStroke"); ps.Thickness = 2; ps.Color = Color3.fromRGB(90, 180, 255); ps.Transparency = 0.4; ps.Parent = panel
 

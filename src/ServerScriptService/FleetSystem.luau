@@ -154,6 +154,7 @@ function FleetSystem.spawnUnit(ownerId, unitType, ignoreCap, guardPos)
 
 	-- Spawn ngay tại vị trí Tàu Mẹ rồi để nó bay ra ring cho đẹp
 	local part = makeUnitPart(unitType, guardPos or owner.part.Position, (owner and owner.teamColor) or Config.TEAM.ENEMY)
+	part:SetAttribute("OwnerUserId", ownerId) -- để client tô màu theo phe (mình=xanh, khác=đỏ)
 
 	-- Buff hero (bị động, theo nhóm quân): nhân dmg/hp lúc spawn.
 	local dmgMult, hpMult = FleetSystem.getHeroBuff(ownerId, stats.ring)

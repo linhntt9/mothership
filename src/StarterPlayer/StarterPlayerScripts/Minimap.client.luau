@@ -31,7 +31,7 @@ local player = Players.LocalPlayer
 local playerGui = player:WaitForChild("PlayerGui")
 local myId = player.UserId
 
-local FRAME = 132 -- kích thước minimap (px) — nhỏ gọn ở góc dưới-phải
+local FRAME = game:GetService("UserInputService").TouchEnabled and 92 or 132 -- mobile nhỏ hơn
 
 -- Màu chấm
 local COL_DEPOSIT   = Color3.fromRGB(255, 210, 80)

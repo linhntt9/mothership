@@ -13,6 +13,8 @@
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local UserInputService = game:GetService("UserInputService")
+local IS_TOUCH = UserInputService.TouchEnabled
 
 local Config = require(ReplicatedStorage.Config)
 local Remotes = require(ReplicatedStorage.Remotes)
@@ -83,9 +85,15 @@ dim.BackgroundTransparency = 0.45; dim.Text = ""; dim.AutoButtonColor = false
 dim.Visible = false; dim.ZIndex = 20; dim.Parent = gui
 
 local panel = Instance.new("Frame")
-panel.AnchorPoint = Vector2.new(0.5, 0.5)
-panel.Position = UDim2.new(0.5, 0, 0.5, 0)
-panel.Size = UDim2.new(0, 600, 0, 460)
+if IS_TOUCH then
+	-- Mobile: chừa lề trên né topbar Roblox + co theo màn (không vượt cỡ gốc).
+	panel.AnchorPoint = Vector2.new(0.5, 0); panel.Position = UDim2.new(0.5, 0, 0, 46)
+	panel.Size = UDim2.new(0.9, 0, 0.82, 0)
+	local szc = Instance.new("UISizeConstraint"); szc.MaxSize = Vector2.new(600, 460); szc.Parent = panel
+else
+	panel.AnchorPoint = Vector2.new(0.5, 0.5); panel.Position = UDim2.new(0.5, 0, 0.5, 0)
+	panel.Size = UDim2.new(0, 600, 0, 460)
+end
 panel.BackgroundColor3 = PANEL_BG; panel.Visible = false; panel.ZIndex = 21; panel.Parent = gui
 local pc = Instance.new("UICorner"); pc.CornerRadius = UDim.new(0, 18); pc.Parent = panel
 local ps = Instance.new("UIStroke"); ps.Thickness = 2; ps.Color = GOLD; ps.Transparency = 0.4; ps.Parent = panel

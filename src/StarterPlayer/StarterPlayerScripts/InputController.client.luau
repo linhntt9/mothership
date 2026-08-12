@@ -270,65 +270,52 @@ local isTouch = UserInputService.TouchEnabled
 local stickVec = Vector2.new(0, 0) -- hướng joystick (-1..1): X=phải, Y=tới
 local dragWorld = nil              -- world point dưới ngón đang KÉO (lái bằng cách di màn hình)
 if isTouch then
+	-- ===== JOYSTICK ĐỘNG (floating): chạm-kéo BẤT KỲ ĐÂU -> joystick hiện ngay tại ngón,
+	-- kéo theo HƯỚNG để lái (theo camera). Không icon cố định. Tap nhanh = nhắm mục tiêu.
 	local pgui = player:WaitForChild("PlayerGui")
 	local tgui = Instance.new("ScreenGui")
 	tgui.Name = "TouchControls"; tgui.ResetOnSpawn = false; tgui.IgnoreGuiInset = true; tgui.Parent = pgui
-	local R = 70
+	local R = 60
 	local base = Instance.new("Frame")
-	base.AnchorPoint = Vector2.new(0.5, 0.5)
-	base.Position = UDim2.new(0, 130, 1, -130)
-	base.Size = UDim2.fromOffset(R * 2, R * 2)
-	base.BackgroundColor3 = Color3.fromRGB(20, 24, 34); base.BackgroundTransparency = 0.55
+	base.AnchorPoint = Vector2.new(0.5, 0.5); base.Size = UDim2.fromOffset(R * 2, R * 2)
+	base.BackgroundColor3 = Color3.fromRGB(20, 24, 34); base.BackgroundTransparency = 0.6; base.Visible = false
 	local bcn = Instance.new("UICorner"); bcn.CornerRadius = UDim.new(1, 0); bcn.Parent = base
+	local bst = Instance.new("UIStroke"); bst.Color = Color3.fromRGB(120, 150, 210); bst.Transparency = 0.5; bst.Parent = base
 	base.Parent = tgui
 	local knob = Instance.new("Frame")
 	knob.AnchorPoint = Vector2.new(0.5, 0.5); knob.Position = UDim2.fromScale(0.5, 0.5)
-	knob.Size = UDim2.fromOffset(64, 64); knob.BackgroundColor3 = Color3.fromRGB(120, 170, 255); knob.BackgroundTransparency = 0.1
+	knob.Size = UDim2.fromOffset(52, 52); knob.BackgroundColor3 = Color3.fromRGB(120, 170, 255); knob.BackgroundTransparency = 0.15
 	local kcn = Instance.new("UICorner"); kcn.CornerRadius = UDim.new(1, 0); kcn.Parent = knob
 	knob.Parent = base
 
-	local joyTouch = nil
-	local function baseCenter() return base.AbsolutePosition + base.AbsoluteSize / 2 end
-	UserInputService.InputBegan:Connect(function(input)
-		if input.UserInputType ~= Enum.UserInputType.Touch or joyTouch then return end
-		local d = Vector2.new(input.Position.X, input.Position.Y) - baseCenter()
-		if d.Magnitude <= R + 45 then joyTouch = input end -- chạm gần joystick -> điều khiển stick
-	end)
-	UserInputService.InputChanged:Connect(function(input)
-		if input ~= joyTouch or input.UserInputType ~= Enum.UserInputType.Touch then return end
-		local d = Vector2.new(input.Position.X, input.Position.Y) - baseCenter()
-		if d.Magnitude > R then d = d.Unit * R end
-		knob.Position = UDim2.new(0.5, d.X, 0.5, d.Y)
-		stickVec = Vector2.new(d.X / R, -d.Y / R)
-	end)
-	UserInputService.InputEnded:Connect(function(input)
-		if input == joyTouch then
-			joyTouch = nil; stickVec = Vector2.new(0, 0); knob.Position = UDim2.fromScale(0.5, 0.5)
-		end
-	end)
-
-	-- ===== KÉO bất kỳ đâu (ngoài joystick/GUI) để LÁI =====
-	-- Một chạm chưa rõ TAP hay KÉO: di quá ngưỡng -> thành KÉO (lái tới điểm dưới ngón).
-	local moveTouch, candidate, candStart = nil, nil, nil
-	local DRAG_THRESH = 12
+	local joyTouch, origin, candidate, candStart = nil, nil, nil, nil
+	local DRAG_THRESH = 10
+	local function startJoy(input, sp)
+		joyTouch = input; origin = sp
+		base.Position = UDim2.fromOffset(sp.X, sp.Y); knob.Position = UDim2.fromScale(0.5, 0.5); base.Visible = true
+	end
+	local function endJoy()
+		joyTouch = nil; origin = nil; stickVec = Vector2.new(0, 0); base.Visible = false
+	end
 	UserInputService.InputBegan:Connect(function(input, gp)
-		if input.UserInputType ~= Enum.UserInputType.Touch or gp then return end -- gp: chạm trúng nút GUI
-		if input == joyTouch then return end -- joystick tự lo
-		candidate = input
-		candStart = Vector2.new(input.Position.X, input.Position.Y)
+		if input.UserInputType ~= Enum.UserInputType.Touch or gp then return end -- gp: trúng nút GUI
+		candidate = input; candStart = Vector2.new(input.Position.X, input.Position.Y)
 	end)
 	UserInputService.InputChanged:Connect(function(input)
 		if input.UserInputType ~= Enum.UserInputType.Touch then return end
-		if input == candidate and candStart
-			and (Vector2.new(input.Position.X, input.Position.Y) - candStart).Magnitude > DRAG_THRESH then
-			moveTouch = input; candidate = nil -- đã di đủ xa -> chuyển sang LÁI
+		local p = Vector2.new(input.Position.X, input.Position.Y)
+		if input == candidate and candStart and (p - candStart).Magnitude > DRAG_THRESH then
+			startJoy(input, candStart); candidate = nil -- kéo -> bật joystick tại gốc chạm
 		end
-		if input == moveTouch then
-			dragWorld = cursorWorldPoint(Vector2.new(input.Position.X, input.Position.Y))
+		if input == joyTouch and origin then
+			local d = p - origin
+			if d.Magnitude > R then d = d.Unit * R end
+			knob.Position = UDim2.new(0.5, d.X, 0.5, d.Y)
+			stickVec = Vector2.new(d.X / R, -d.Y / R) -- X=phải, Y=tới (màn hình: lên = -Y)
 		end
 	end)
 	UserInputService.InputEnded:Connect(function(input)
-		if input == moveTouch then moveTouch = nil; dragWorld = nil end
+		if input == joyTouch then endJoy() end
 		if input == candidate then candidate = nil end
 	end)
 
@@ -419,20 +406,16 @@ RunService.RenderStepped:Connect(function(dt)
 			local ship = getMyShip()
 			if ship then
 				local sp = ship.Position
-				-- Người chơi tự điều khiển -> huỷ auto-lái tới cổng.
-				if ClientBus.autoGo and (dragWorld or stickVec.Magnitude > 0.15) then ClientBus.autoGo = nil end
+				-- Người chơi tự điều khiển (joystick) -> huỷ auto-lái tới cổng.
+				if ClientBus.autoGo and stickVec.Magnitude > 0.15 then ClientBus.autoGo = nil end
 				if buildMode or player:GetAttribute("BuildingUIOpen") then
 					Remotes.MoveInput:FireServer(sp)
-				elseif dragWorld then
-					-- Kéo màn hình: lái tới điểm dưới ngón (kẹp leash như PC) + AimInput cho vệ tinh split.
-					Remotes.AimInput:FireServer(dragWorld)
-					local flat = Vector3.new(dragWorld.X - sp.X, 0, dragWorld.Z - sp.Z)
-					local leash = playing and (Config.MOTHERSHIP.MOVE_LEASH or 1e9) or 1e9
-					local target = (flat.Magnitude > leash) and (sp + flat.Unit * leash) or dragWorld
-					Remotes.MoveInput:FireServer(target)
 				elseif stickVec.Magnitude > 0.15 then
+					-- JOYSTICK ĐỘNG: lái theo HƯỚNG (camera-relative) + AimInput cùng hướng cho vệ tinh split.
+					local dir = camDir(stickVec.X, stickVec.Y)
 					local reach = playing and (Config.MOTHERSHIP.MOVE_LEASH or 70) or LOBBY_AHEAD
-					Remotes.MoveInput:FireServer(sp + camDir(stickVec.X, stickVec.Y) * reach)
+					Remotes.AimInput:FireServer(sp + dir * 200)
+					Remotes.MoveInput:FireServer(sp + dir * reach)
 				elseif (not playing) and ClientBus.autoGo then
 					-- Sảnh: chạm cổng -> Tàu Mẹ TỰ lái tới đó (tới nơi thì applyZone tự vào trận).
 					local g = ClientBus.autoGo

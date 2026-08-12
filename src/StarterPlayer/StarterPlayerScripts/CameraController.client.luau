@@ -121,7 +121,7 @@ end
 -- Chờ lần đầu (Tàu Mẹ có thể replicate hơi trễ)
 local myShip = folder:WaitForChild(myName, 15) or findMyShipNow()
 
-RunService.RenderStepped:Connect(function()
+RunService.RenderStepped:Connect(function(dt)
 	-- Ship bị huỷ (chết/Restart) -> tự tìm lại (ship mới sau Restart cùng tên).
 	if not myShip or not myShip.Parent then
 		myShip = findMyShipNow()
@@ -136,7 +136,7 @@ RunService.RenderStepped:Connect(function()
 		camera.CameraType = Enum.CameraType.Scriptable
 	end
 
-	-- Bám cứng vào vị trí Tàu Mẹ (như cũ — không nội suy).
+	-- Bám cứng vào vị trí Tàu Mẹ (part đã được ShipSmooth nội suy mượt ở client).
 	local pos = myShip.Position
 	local camPos, lookAt
 	if playing then

@@ -315,57 +315,7 @@ backBtn.Activated:Connect(function()
 	Remotes.ToLobby:FireServer()
 end)
 
--------------------------------------------------------------------------------
--- Leaderboard (góc trên-phải)
--------------------------------------------------------------------------------
-local lb = Instance.new("Frame")
-lb.Name = "Leaderboard"
-lb.AnchorPoint = Vector2.new(1, 0)
-lb.Position = UDim2.new(1, -16, 0, 16)
-lb.Size = UDim2.new(0, 200, 0, 0)
-lb.AutomaticSize = Enum.AutomaticSize.Y
-lb.BackgroundColor3 = Color3.fromRGB(15, 18, 28)
-lb.BackgroundTransparency = 0.25
-local lbc = Instance.new("UICorner"); lbc.CornerRadius = UDim.new(0, 8); lbc.Parent = lb
-local lbpad = Instance.new("UIPadding")
-lbpad.PaddingTop = UDim.new(0, 6); lbpad.PaddingBottom = UDim.new(0, 6)
-lbpad.PaddingLeft = UDim.new(0, 8); lbpad.PaddingRight = UDim.new(0, 8)
-lbpad.Parent = lb
-local lblist = Instance.new("UIListLayout")
-lblist.Padding = UDim.new(0, 2); lblist.SortOrder = Enum.SortOrder.LayoutOrder
-lblist.Parent = lb
-lb.Parent = gui
-
-local lbTitle = Instance.new("TextLabel")
-lbTitle.LayoutOrder = 0
-lbTitle.Size = UDim2.new(1, 0, 0, 22)
-lbTitle.BackgroundTransparency = 1
-lbTitle.TextColor3 = Color3.fromRGB(255, 220, 120)
-lbTitle.Font = Enum.Font.GothamBold
-lbTitle.TextSize = 15
-lbTitle.Text = "BẢNG XẾP HẠNG"
-lbTitle.Parent = lb
-
-local lbRows = {}
-Remotes.Leaderboard.OnClientEvent:Connect(function(list)
-	for _, r in ipairs(lbRows) do r:Destroy() end
-	table.clear(lbRows)
-	for i, entry in ipairs(list) do
-		local row = Instance.new("TextLabel")
-		row.LayoutOrder = i
-		row.Size = UDim2.new(1, 0, 0, 20)
-		row.BackgroundTransparency = 1
-		row.Font = Enum.Font.Gotham
-		row.TextSize = 14
-		row.TextXAlignment = Enum.TextXAlignment.Left
-		local mine = (entry.id == player.UserId)
-		row.TextColor3 = mine and Color3.fromRGB(120, 255, 140) or Color3.fromRGB(220, 220, 225)
-		row.Font = mine and Enum.Font.GothamBold or Enum.Font.Gotham
-		row.Text = ("%d. %s — %d"):format(i, entry.name, entry.score)
-		row.Parent = lb
-		table.insert(lbRows, row)
-	end
-end)
+-- (Bảng xếp hạng ở HUD đã bỏ để chừa diện tích — rank hiển thị gọn ở chip mobile.)
 
 -------------------------------------------------------------------------------
 -- Bảng kết thúc (card): tiêu đề + 3 ô thống kê + nút Chơi lại
@@ -652,7 +602,6 @@ if UserInputService.TouchEnabled then
 	bar.Visible = false
 	hint.Visible = false
 	scrapLabel.Visible = false; fleetLabel.Visible = false; gemLabel.Visible = false
-	lb.Visible = false -- bảng xếp hạng đầy đủ -> thay bằng rank chip gọn
 
 	local PANEL = Color3.fromRGB(18, 24, 40)
 	local STROKE = Color3.fromRGB(57, 80, 122)
@@ -665,35 +614,34 @@ if UserInputService.TouchEnabled then
 		return f
 	end
 
-	-- ===== TOP-LEFT: resource strip (Scrap · Gem · Fleet cap) =====
+	-- ===== TRÊN-GIỮA: resource strip NGANG (Scrap · Gem · Fleet) — né topbar Roblox trái + minimap phải =====
 	local strip = Instance.new("Frame")
-	-- Trên-PHẢI: xếp DỌC dưới minimap (y12..144) + rank chip (y152..182), né topbar Roblox bên trái.
-	strip.AnchorPoint = Vector2.new(1, 0); strip.Position = UDim2.new(1, -12, 0, 188); strip.Size = UDim2.new(0, 116, 0, 102)
+	strip.AnchorPoint = Vector2.new(0.5, 0); strip.Position = UDim2.new(0.5, 0, 0, 46); strip.Size = UDim2.new(0, 3 * 92 + 2 * 6, 0, 28)
 	strip.BackgroundTransparency = 1; strip.Parent = gui
 	local sl = Instance.new("UIListLayout")
-	sl.FillDirection = Enum.FillDirection.Vertical; sl.Padding = UDim.new(0, 6)
-	sl.HorizontalAlignment = Enum.HorizontalAlignment.Right; sl.Parent = strip
+	sl.FillDirection = Enum.FillDirection.Horizontal; sl.Padding = UDim.new(0, 6)
+	sl.HorizontalAlignment = Enum.HorizontalAlignment.Center; sl.VerticalAlignment = Enum.VerticalAlignment.Center; sl.Parent = strip
 
-	local scrapPill = pill(strip, 116); scrapPill.LayoutOrder = 1
+	local scrapPill = pill(strip, 92); scrapPill.LayoutOrder = 1
 	local mScrap = Instance.new("TextLabel")
 	mScrap.Size = UDim2.fromScale(1, 1); mScrap.BackgroundTransparency = 1; mScrap.Font = Enum.Font.GothamBold
 	mScrap.TextSize = 14; mScrap.TextColor3 = Color3.fromRGB(255, 210, 100); mScrap.Text = "◈ 0"; mScrap.Parent = scrapPill
 
-	local gemPill = pill(strip, 116); gemPill.LayoutOrder = 2
+	local gemPill = pill(strip, 92); gemPill.LayoutOrder = 2
 	local mGem = Instance.new("TextLabel")
 	mGem.Size = UDim2.fromScale(1, 1); mGem.BackgroundTransparency = 1; mGem.Font = Enum.Font.GothamBold
 	mGem.TextSize = 14; mGem.TextColor3 = Color3.fromRGB(200, 150, 255); mGem.Text = "◆ 0"; mGem.Parent = gemPill
 
-	local fleetPill = pill(strip, 116); fleetPill.LayoutOrder = 3
+	local fleetPill = pill(strip, 92); fleetPill.LayoutOrder = 3
 	local fBar = Instance.new("Frame")
-	fBar.AnchorPoint = Vector2.new(0, 0.5); fBar.Position = UDim2.new(0, 8, 0.5, 0); fBar.Size = UDim2.new(0, 56, 0, 8)
+	fBar.AnchorPoint = Vector2.new(0, 0.5); fBar.Position = UDim2.new(0, 7, 0.5, 0); fBar.Size = UDim2.new(0, 40, 0, 7)
 	fBar.BackgroundColor3 = Color3.fromRGB(43, 58, 92); fBar.Parent = fleetPill
 	local fbc = Instance.new("UICorner"); fbc.CornerRadius = UDim.new(1, 0); fbc.Parent = fBar
 	local fFill = Instance.new("Frame")
 	fFill.Size = UDim2.new(0, 0, 1, 0); fFill.BackgroundColor3 = Color3.fromRGB(102, 211, 138); fFill.Parent = fBar
 	local ffc = Instance.new("UICorner"); ffc.CornerRadius = UDim.new(1, 0); ffc.Parent = fFill
 	local fTxt = Instance.new("TextLabel")
-	fTxt.AnchorPoint = Vector2.new(1, 0.5); fTxt.Position = UDim2.new(1, -8, 0.5, 0); fTxt.Size = UDim2.new(0, 42, 1, 0)
+	fTxt.AnchorPoint = Vector2.new(1, 0.5); fTxt.Position = UDim2.new(1, -6, 0.5, 0); fTxt.Size = UDim2.new(0, 36, 1, 0)
 	fTxt.BackgroundTransparency = 1; fTxt.Font = Enum.Font.GothamBold; fTxt.TextSize = 11
 	fTxt.TextColor3 = Color3.fromRGB(207, 227, 255); fTxt.TextXAlignment = Enum.TextXAlignment.Right; fTxt.Text = "0/0"; fTxt.Parent = fleetPill
 
@@ -701,8 +649,8 @@ if UserInputService.TouchEnabled then
 	Remotes.GemUpdate.OnClientEvent:Connect(function(g) mGemVal = g; mGem.Text = "◆ " .. tostring(g) end)
 
 	-- ===== TOP-RIGHT: rank chip (dưới minimap) =====
-	local rankChip = pill(gui, 116)
-	rankChip.AnchorPoint = Vector2.new(1, 0); rankChip.Position = UDim2.new(1, -12, 0, 152)
+	local rankChip = pill(gui, 92)
+	rankChip.AnchorPoint = Vector2.new(1, 0); rankChip.Position = UDim2.new(1, -12, 0, 112)
 	local rankTxt = Instance.new("TextLabel")
 	rankTxt.Size = UDim2.fromScale(1, 1); rankTxt.BackgroundTransparency = 1; rankTxt.Font = Enum.Font.GothamBold
 	rankTxt.TextSize = 13; rankTxt.TextColor3 = Color3.fromRGB(255, 210, 100); rankTxt.Text = "#? · –"; rankTxt.Parent = rankChip

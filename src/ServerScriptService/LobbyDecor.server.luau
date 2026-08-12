@@ -19,6 +19,39 @@
 local Workspace = game:GetService("Workspace")
 local Lighting = game:GetService("Lighting")
 local RunService = game:GetService("RunService")
+local InsertService = game:GetService("InsertService")
+
+-- ===== SKYBOX (asset id) — sảnh vs trận/test =====
+local LOBBY_SKYBOX = 83555979203508    -- sảnh
+-- Trận/test: nebula tím + tiểu hành tinh + hành tinh hồng (giống ảnh tham chiếu).
+-- Nếu chưa ưng, đổi sang 1 trong: 79185969624817 · 230057997 · 158838449 · 107689530722174
+local MATCH_SKYBOX = 101231340581451   -- "Purple Nebula Complex Space Skybox"
+
+-- Đặt skybox từ asset id. Ưu tiên nạp asset dạng Sky (LoadAsset); nếu asset là
+-- ẢNH thì fallback gán 6 mặt = ảnh đó. Luôn chỉ để 1 Sky trong Lighting.
+local function setSkybox(assetId)
+	for _, s in ipairs(Lighting:GetChildren()) do
+		if s:IsA("Sky") then s:Destroy() end
+	end
+	-- Thử nạp asset (thường skybox toolbox = Sky có sẵn 6 mặt).
+	local ok, model = pcall(function() return InsertService:LoadAsset(assetId) end)
+	if ok and model then
+		local sky = model:FindFirstChildWhichIsA("Sky", true)
+		if sky then
+			sky.Name = "Sky"; sky.Parent = Lighting
+			model:Destroy()
+			return
+		end
+		model:Destroy()
+	end
+	-- Fallback: asset là ẢNH -> gán cả 6 mặt.
+	local ref = "rbxassetid://" .. tostring(assetId)
+	local sky = Instance.new("Sky")
+	sky.Name = "Sky"
+	sky.SkyboxBk = ref; sky.SkyboxDn = ref; sky.SkyboxFt = ref
+	sky.SkyboxLf = ref; sky.SkyboxRt = ref; sky.SkyboxUp = ref
+	sky.Parent = Lighting
+end
 
 -- ===== BẢNG MÀU =====
 local ORANGE = Color3.fromRGB(255, 120, 22)   -- accent chính (viền, sàn, hologram)
@@ -123,7 +156,7 @@ local function decorate(folder)
 	for _, p in ipairs(folder:GetDescendants()) do
 		if p:IsA("Part") then -- lobby toàn Part; dùng Part để .Shape luôn hợp lệ
 			if p.Name == "LobbyFloor" then
-				p.Color = DARK2; p.Material = Enum.Material.Metal
+				p.Color = Color3.fromRGB(96, 104, 122); p.Material = Enum.Material.Metal -- sàn xám sáng ăn đèn
 			elseif p.Name:match("^Zone_") then
 				-- Giữ nguyên đế vùng (chỉ dấu vùng kích hoạt) — không đụng.
 			elseif p.Material == Enum.Material.SmoothPlastic and p.Size.Y >= 18 then
@@ -139,17 +172,7 @@ local function decorate(folder)
 	-- Container decor riêng (nằm TRONG folder Lobby -> clearHall tự dọn).
 	local d = Instance.new("Folder"); d.Name = "SciFiDecor"; d.Parent = folder
 
-	-- (2) SÀN: strip neon cam đồng tâm + nan hoa toả tia (y ~ 0.15, mỏng).
-	ring(d, 0, 0, 0.15, 72, 40, 0.35, 1.6, ORANGE, Enum.Material.Neon, 0.1)
-	ring(d, 0, 0, 0.15, 122, 48, 0.35, 1.6, ORANGE, Enum.Material.Neon, 0.25)
-	for i = 0, 11 do
-		local a = i * math.pi / 6
-		local r0, r1 = 24, 142
-		local mid = (r0 + r1) / 2
-		local pos = Vector3.new(math.cos(a) * mid, 0.15, math.sin(a) * mid)
-		part(d, Vector3.new(1.2, 0.3, r1 - r0), CFrame.lookAt(pos, Vector3.new(0, 0.15, 0)),
-			ORANGE, Enum.Material.Neon, 0.35)
-	end
+	-- (2) SÀN: (đã bỏ ring/nan hoa neon cam theo yêu cầu) — sàn để trơn.
 
 	-- (3) CỬA KÍNH TOÀN CẢNH: vòng kính (Glass, hơi trong) + trụ neon cam giữa các tấm.
 	ring(d, 0, 0, 13.5, 145, 40, 26, 0.6, GLASS, Enum.Material.Glass, 0.45)
@@ -162,21 +185,21 @@ local function decorate(folder)
 	-- Bệ chân kính (vành kim loại tối) cho ra dáng "đài quan sát".
 	ring(d, 0, 0, 0.8, 145, 40, 1.6, 3.2, DARK, Enum.Material.Metal, 0)
 
-	-- (4) TRẦN: 3 vòng Neon TRẮNG đồng tâm treo cao (đèn trần đặc trưng).
-	ring(d, 0, 0, 34, 55, 40, 1.6, 2.4, WHITE, Enum.Material.Neon, 0)
-	ring(d, 0, 0, 37, 95, 48, 1.6, 2.4, WHITE, Enum.Material.Neon, 0.08)
-	ring(d, 0, 0, 40, 135, 56, 1.6, 2.4, WHITE, Enum.Material.Neon, 0.16)
-	-- Đèn nền dịu để tàu/ sàn không tối đen (neon vẫn là nguồn sáng chính).
-	local fill = part(d, Vector3.new(1, 1, 1), CFrame.new(0, 30, 0), WHITE, Enum.Material.Neon, 1)
-	local fpl = Instance.new("PointLight")
-	fpl.Color = WHITE; fpl.Range = 140; fpl.Brightness = 1.2; fpl.Parent = fill
+	-- (4) TRẦN: (đã bỏ 3 vòng neon). Vài đèn nền DỊU trên cao cho đều sáng (không chói).
+	local lampSpots = {
+		Vector3.new(0, 34, 0), Vector3.new(60, 30, 60), Vector3.new(-60, 30, 60),
+		Vector3.new(60, 30, -60), Vector3.new(-60, 30, -60),
+	}
+	for _, c in ipairs(lampSpots) do
+		local fill = part(d, Vector3.new(1, 1, 1), CFrame.new(c), WHITE, Enum.Material.Neon, 1)
+		local fpl = Instance.new("PointLight")
+		fpl.Color = WHITE; fpl.Range = 130; fpl.Brightness = 1.4; fpl.Parent = fill
+	end
 
 	-- (5) HỆ MẶT TRỜI HOLOGRAM ở giữa (nổi trên đầu, không chắn lối lái).
 	activeSolar = buildSolar(d, Vector3.new(0, 18, 0))
 
-	-- (6) BIỂN HIỆU HOLOGRAM cam: tên trạm nổi trên trung tâm.
-	holoSign(d, Vector3.new(0, 30, 0), "★ STARBASE ★", 420)
-	holoSign(d, Vector3.new(0, 24, 40), "OBSERVATION DECK", 300)
+	-- (6) (đã bỏ biển hiệu STARBASE / OBSERVATION DECK theo yêu cầu).
 end
 
 -- ===== LIGHTING: preset không gian (lưu nguyên trạng để KHÔI PHỤC khi vào trận) =====
@@ -201,34 +224,43 @@ local function applySpaceLighting()
 			GlobalShadows = Lighting.GlobalShadows,
 		}
 	end
-	Lighting.Ambient = Color3.fromRGB(8, 8, 12)          -- tối để tôn neon
-	Lighting.OutdoorAmbient = Color3.fromRGB(14, 14, 22)
-	Lighting.Brightness = 1.4
-	Lighting.ClockTime = 0                                -- nửa đêm -> trời sao tối
-	Lighting.EnvironmentDiffuseScale = 0.35
+	-- Sáng vừa phải (không tối đen, cũng KHÔNG cháy trắng).
+	Lighting.Ambient = Color3.fromRGB(90, 95, 110)
+	Lighting.OutdoorAmbient = Color3.fromRGB(115, 120, 140)
+	Lighting.Brightness = 2
+	Lighting.ClockTime = 14                               -- ban ngày
+	Lighting.EnvironmentDiffuseScale = 0.7
 	Lighting.EnvironmentSpecularScale = 0.5
-	Lighting.ExposureCompensation = 0.15
+	Lighting.ExposureCompensation = 0
+	Lighting.GlobalShadows = false -- tắt bóng đổ động (nặng trên mobile)
 
-	ensureEffect("BloomEffect", "LobbyBloom", { Intensity = 0.95, Size = 24, Threshold = 0.82, Enabled = true })
+	ensureEffect("BloomEffect", "LobbyBloom", { Intensity = 0.25, Size = 24, Threshold = 1.4, Enabled = true })
 	ensureEffect("ColorCorrectionEffect", "LobbyCC", {
-		Contrast = 0.16, Saturation = 0.06, Brightness = 0,
-		TintColor = Color3.fromRGB(255, 246, 236), Enabled = true,
+		Contrast = 0.05, Saturation = 0.05, Brightness = 0.02,
+		TintColor = Color3.fromRGB(255, 252, 248), Enabled = true,
 	})
-	ensureEffect("Atmosphere", "LobbyAtmo", {
-		Density = 0.28, Offset = 0.1, Color = Color3.fromRGB(60, 66, 92),
-		Decay = Color3.fromRGB(70, 60, 90), Glare = 0.15, Haze = 1.4,
-	})
-	ensureEffect("Sky", "LobbySky", { StarCount = 3000, SunAngularSize = 6, MoonAngularSize = 4 })
+	-- Bỏ Atmosphere mù (làm tối/đục). Skybox lobby.
+	local atmo = Lighting:FindFirstChild("LobbyAtmo"); if atmo then atmo:Destroy() end
+	setSkybox(LOBBY_SKYBOX)
 end
 
+-- Rời sảnh -> đặt lighting TRẬN sáng vừa (nâng bóng tối để thấy rõ tàu/quân trên nền
+-- không gian tối) + skybox trận. Không cháy trắng, giữ chất "space".
 local function restoreLighting()
-	if not savedLighting then return end
-	for k, v in pairs(savedLighting) do Lighting[k] = v end
-	for _, n in ipairs({ "LobbyBloom", "LobbyCC", "LobbyAtmo", "LobbySky" }) do
+	for _, n in ipairs({ "LobbyBloom", "LobbyCC", "LobbyAtmo" }) do
 		local e = Lighting:FindFirstChild(n)
 		if e then e:Destroy() end
 	end
 	savedLighting = nil
+	Lighting.Ambient = Color3.fromRGB(80, 85, 100)        -- nâng bóng cho thấy rõ trong trận
+	Lighting.OutdoorAmbient = Color3.fromRGB(105, 110, 130)
+	Lighting.Brightness = 2.2
+	Lighting.ClockTime = 14
+	Lighting.EnvironmentDiffuseScale = 0.6
+	Lighting.EnvironmentSpecularScale = 0.4
+	Lighting.ExposureCompensation = 0
+	Lighting.GlobalShadows = false                         -- tránh viền tối gắt trên part phẳng
+	setSkybox(MATCH_SKYBOX)
 end
 
 -- ===== HOOK: theo dõi Folder "Lobby" xuất hiện / biến mất =====
