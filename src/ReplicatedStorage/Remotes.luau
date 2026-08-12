@@ -68,6 +68,7 @@ local EVENT_NAMES = {
 	"LevelUpdate",     -- server -> client: cấp người chơi (thắng +1, thua -1)
 	"PricesUpdate",    -- server -> client: giá hiện tại (leo thang) của unit & công trình
 	"BuildingAlert",   -- server -> client: công trình của mình bị đánh (vị trí) -> minimap báo động
+	"CombatNotify",    -- server -> client: banner combat ("atk"=bạn tấn công / "def"=bị tấn công)
 }
 
 local function getFolder()

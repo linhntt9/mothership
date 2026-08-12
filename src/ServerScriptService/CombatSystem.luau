@@ -153,11 +153,28 @@ end
 
 CombatSystem.killMothership = killMothership -- expose cho OOB death (MothershipSystem.killFn)
 
+-- Banner combat cho người chơi (throttle 3s / người / loại):
+--   "atk" = bạn ĐANG TẤN CÔNG địch (xanh) · "def" = bạn ĐANG BỊ TẤN CÔNG (đỏ).
+local lastCombatNoti = {}
+local function notifyCombat(uid, kind)
+	if not uid or uid <= 0 then return end -- chỉ người chơi (bot id âm)
+	local player = Players:GetPlayerByUserId(uid)
+	if not player then return end
+	local rec = lastCombatNoti[uid]
+	if not rec then rec = {}; lastCombatNoti[uid] = rec end
+	local now = os.clock()
+	if (now - (rec[kind] or 0)) < 3 then return end
+	rec[kind] = now
+	Remotes.CombatNotify:FireClient(player, kind)
+end
+
 -- Gây damage cho 1 entity (unit hoặc mothership) và xử lý chết.
 local function damageEntity(ent, amount, attackerOwner)
 	if ent.kind == "Mothership" then
 		if not ent.alive then return end
 		if attackerOwner then ent.lastAttackerId = attackerOwner end -- nhớ ai bắn phát cuối
+		-- Tàu Mẹ của mình bị địch đánh -> banner "đang bị tấn công" (đỏ).
+		if attackerOwner and attackerOwner ~= ent.ownerId then notifyCombat(ent.ownerId, "def") end
 		ent.lastDamageTime = os.clock() -- mốc "vừa trúng đòn" -> hoãn hồi máu
 		ent.hp -= amount
 		MothershipSystem.updateHealthBar(ent)
@@ -169,8 +186,9 @@ local function damageEntity(ent, amount, attackerOwner)
 		ent.hp -= amount
 		ent.lastDamageTime = os.clock() -- cho bot biết công trình đang bị đánh
 		BuildingSystem.updateHealthBar(ent)
-		-- Công trình của MÌNH bị địch đánh -> báo động minimap (throttle ~1s).
+		-- Công trình của MÌNH bị địch đánh -> báo động minimap (throttle ~1s) + banner đỏ.
 		if attackerOwner and attackerOwner ~= ent.ownerId then
+			notifyCombat(ent.ownerId, "def")
 			local p = Players:GetPlayerByUserId(ent.ownerId)
 			if p and (os.clock() - (ent.lastAlert or 0)) > 1 then
 				ent.lastAlert = os.clock()

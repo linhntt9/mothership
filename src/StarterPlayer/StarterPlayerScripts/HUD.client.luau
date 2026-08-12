@@ -283,6 +283,47 @@ Remotes.Notify.OnClientEvent:Connect(function(text)
 end)
 
 -------------------------------------------------------------------------------
+-- Banner COMBAT: "def" = bị tấn công (đỏ) · "atk" = bạn tấn công (xanh). Chữ trắng.
+-------------------------------------------------------------------------------
+local combatBanner = Instance.new("TextLabel")
+combatBanner.AnchorPoint = Vector2.new(0.5, 0)
+combatBanner.Position = UDim2.new(0.5, 0, 0, 100)
+combatBanner.Size = UDim2.new(0, 300, 0, 36)
+combatBanner.BackgroundColor3 = Color3.fromRGB(220, 60, 60)
+combatBanner.BackgroundTransparency = 1
+combatBanner.TextColor3 = Color3.fromRGB(255, 255, 255)
+combatBanner.TextTransparency = 1
+combatBanner.Font = Enum.Font.GothamBold
+combatBanner.TextSize = 17
+combatBanner.Text = ""
+combatBanner.ZIndex = 8
+local cbcc = Instance.new("UICorner"); cbcc.CornerRadius = UDim.new(0, 10); cbcc.Parent = combatBanner
+combatBanner.Parent = gui
+
+local combatToken = 0
+local TweenService = game:GetService("TweenService")
+Remotes.CombatNotify.OnClientEvent:Connect(function(kind)
+	if kind == "def" then
+		combatBanner.BackgroundColor3 = Color3.fromRGB(220, 60, 60)
+		combatBanner.Text = "⚠ ĐANG BỊ TẤN CÔNG!"
+	else -- "atk"
+		combatBanner.BackgroundColor3 = Color3.fromRGB(60, 180, 90)
+		combatBanner.Text = "⚔ ĐANG TẤN CÔNG ĐỊCH!"
+	end
+	combatBanner.BackgroundTransparency = 0.05
+	combatBanner.TextTransparency = 0
+	combatToken += 1
+	local my = combatToken
+	-- Giữ rõ ~1.2s rồi mờ dần.
+	task.delay(1.2, function()
+		if my ~= combatToken then return end
+		TweenService:Create(combatBanner, TweenInfo.new(0.6), {
+			BackgroundTransparency = 1, TextTransparency = 1,
+		}):Play()
+	end)
+end)
+
+-------------------------------------------------------------------------------
 -- Hint phím
 -------------------------------------------------------------------------------
 local hint = Instance.new("TextLabel")
