@@ -22,10 +22,8 @@ local RunService = game:GetService("RunService")
 local InsertService = game:GetService("InsertService")
 
 -- ===== SKYBOX (asset id) — sảnh vs trận/test =====
-local LOBBY_SKYBOX = 83555979203508    -- sảnh
--- Trận/test: nebula tím + tiểu hành tinh + hành tinh hồng (giống ảnh tham chiếu).
--- Nếu chưa ưng, đổi sang 1 trong: 79185969624817 · 230057997 · 158838449 · 107689530722174
-local MATCH_SKYBOX = 101231340581451   -- "Purple Nebula Complex Space Skybox"
+local LOBBY_SKYBOX = 130093177270069   -- sảnh (theo yêu cầu)
+local MATCH_SKYBOX = 83555979203508    -- trận + test (theo yêu cầu)
 
 -- Đặt skybox từ asset id. Ưu tiên nạp asset dạng Sky (LoadAsset); nếu asset là
 -- ẢNH thì fallback gán 6 mặt = ảnh đó. Luôn chỉ để 1 Sky trong Lighting.
@@ -94,16 +92,16 @@ local activeSolar = nil -- { center = Vector3, bodies = { {part, r, speed, ang, 
 
 local function buildSolar(parent, center)
 	-- Mặt trời: cầu Neon cam mờ + PointLight.
-	local sun = part(parent, Vector3.new(7, 7, 7), CFrame.new(center), ORANGE, Enum.Material.Neon, 0.25)
+	local sun = part(parent, Vector3.new(7, 7, 7), CFrame.new(center), Color3.fromRGB(255, 244, 214), Enum.Material.Neon, 0.25)
 	sun.Shape = Enum.PartType.Ball
 	local pl = Instance.new("PointLight")
-	pl.Color = Color3.fromRGB(255, 170, 90); pl.Range = 34; pl.Brightness = 3; pl.Parent = sun
+	pl.Color = Color3.fromRGB(255, 230, 195); pl.Range = 34; pl.Brightness = 3; pl.Parent = sun
 
 	local defs = {
 		{ r = 10, spd = 0.85, sz = 1.6, col = Color3.fromRGB(120, 200, 255) },
 		{ r = 15, spd = 0.58, sz = 2.4, col = Color3.fromRGB(120, 255, 170) },
 		{ r = 21, spd = 0.40, sz = 2.0, col = Color3.fromRGB(200, 120, 255) },
-		{ r = 28, spd = 0.28, sz = 3.0, col = Color3.fromRGB(255, 150, 90) },
+		{ r = 28, spd = 0.28, sz = 3.0, col = Color3.fromRGB(120, 225, 220) },
 	}
 	local bodies = {}
 	for i, d in ipairs(defs) do
@@ -162,7 +160,7 @@ local function decorate(folder)
 			elseif p.Material == Enum.Material.SmoothPlastic and p.Size.Y >= 18 then
 				p.Transparency = 1 -- ẩn tường hộp cũ -> lộ vũ trụ qua kính vòng mới
 			elseif p.Material == Enum.Material.Neon and p.Shape ~= Enum.PartType.Cylinder and p.Size.Y <= 3 then
-				p.Color = ORANGE -- viền neon (đỉnh tường) -> cam
+				p.Color = WHITE -- viền neon (đỉnh tường) -> trắng lạnh (bỏ cam)
 			elseif p.Material == Enum.Material.Metal then
 				p.Color = DARK   -- bục/gian hàng -> tối
 			end
@@ -174,13 +172,13 @@ local function decorate(folder)
 
 	-- (2) SÀN: (đã bỏ ring/nan hoa neon cam theo yêu cầu) — sàn để trơn.
 
-	-- (3) CỬA KÍNH TOÀN CẢNH: vòng kính (Glass, hơi trong) + trụ neon cam giữa các tấm.
+	-- (3) CỬA KÍNH TOÀN CẢNH: vòng kính (Glass, hơi trong) + khung kim loại tối giữa các tấm (bỏ neon cam).
 	ring(d, 0, 0, 13.5, 145, 40, 26, 0.6, GLASS, Enum.Material.Glass, 0.45)
 	for i = 0, 39 do
 		local a = i * (2 * math.pi / 40)
 		local pos = Vector3.new(math.cos(a) * 145, 13.5, math.sin(a) * 145)
 		part(d, Vector3.new(0.7, 27, 0.7), CFrame.lookAt(pos, Vector3.new(0, 13.5, 0)),
-			ORANGE, Enum.Material.Neon, 0.15)
+			DARK, Enum.Material.Metal, 0)
 	end
 	-- Bệ chân kính (vành kim loại tối) cho ra dáng "đài quan sát".
 	ring(d, 0, 0, 0.8, 145, 40, 1.6, 3.2, DARK, Enum.Material.Metal, 0)
@@ -225,13 +223,13 @@ local function applySpaceLighting()
 		}
 	end
 	-- Sáng vừa phải (không tối đen, cũng KHÔNG cháy trắng).
-	Lighting.Ambient = Color3.fromRGB(90, 95, 110)
-	Lighting.OutdoorAmbient = Color3.fromRGB(115, 120, 140)
-	Lighting.Brightness = 2
+	Lighting.Ambient = Color3.fromRGB(128, 133, 150)      -- sáng hơn rõ
+	Lighting.OutdoorAmbient = Color3.fromRGB(152, 158, 178)
+	Lighting.Brightness = 2.8
 	Lighting.ClockTime = 14                               -- ban ngày
-	Lighting.EnvironmentDiffuseScale = 0.7
+	Lighting.EnvironmentDiffuseScale = 0.85
 	Lighting.EnvironmentSpecularScale = 0.5
-	Lighting.ExposureCompensation = 0
+	Lighting.ExposureCompensation = 0.12
 	Lighting.GlobalShadows = false -- tắt bóng đổ động (nặng trên mobile)
 
 	ensureEffect("BloomEffect", "LobbyBloom", { Intensity = 0.25, Size = 24, Threshold = 1.4, Enabled = true })
