@@ -16,14 +16,27 @@
 local RunService = game:GetService("RunService")
 local Workspace = game:GetService("Workspace")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Players = game:GetService("Players")
 
 local Config = require(ReplicatedStorage.Config)
 local Util = require(ReplicatedStorage.Util)
+local Remotes = require(ReplicatedStorage.Remotes)
 local GameState = require(script.Parent.GameState)
 local EconomySystem = require(script.Parent.EconomySystem)
 local MatchState = require(script.Parent.MatchState)
 
 local PickupSystem = {}
+
+-- Báo client (chủ) vừa nhặt scrap -> SFX collect. Throttle theo owner để đỡ spam remote.
+local lastCollectFire = {}
+local function notifyCollect(ownerId)
+	if not ownerId or ownerId < 0 then return end -- bot -> bỏ
+	local now = os.clock()
+	if lastCollectFire[ownerId] and (now - lastCollectFire[ownerId]) < 0.03 then return end
+	lastCollectFire[ownerId] = now
+	local plr = Players:GetPlayerByUserId(ownerId)
+	if plr then Remotes.ScrapCollect:FireClient(plr) end
+end
 
 local folder
 local ORB_Y = 3 -- độ cao orb lơ lửng trên mặt map
@@ -57,6 +70,26 @@ local function makeOrb(x, z, value)
 	orb.Position = Vector3.new(x, ORB_Y, z)
 	orb.Color = Color3.fromRGB(255, 210, 80)
 	orb.Material = Enum.Material.Neon
+
+	-- Trail nhẹ: chỉ hiện rõ khi orb BAY VÀO (lúc collect); tĩnh thì gần như tắt.
+	local a0 = Instance.new("Attachment"); a0.Position = Vector3.new(0, s * 0.3, 0); a0.Parent = orb
+	local a1 = Instance.new("Attachment"); a1.Position = Vector3.new(0, -s * 0.3, 0); a1.Parent = orb
+	local trail = Instance.new("Trail")
+	trail.Attachment0 = a0; trail.Attachment1 = a1
+	trail.Lifetime = 0.22
+	trail.LightEmission = 1
+	trail.FaceCamera = true
+	trail.Color = ColorSequence.new(Color3.fromRGB(255, 220, 110))
+	trail.Transparency = NumberSequence.new({
+		NumberSequenceKeypoint.new(0, 0.35),
+		NumberSequenceKeypoint.new(1, 1),
+	})
+	trail.WidthScale = NumberSequence.new({
+		NumberSequenceKeypoint.new(0, 1),
+		NumberSequenceKeypoint.new(1, 0),
+	})
+	trail.Parent = orb
+
 	orb.Parent = folder
 
 	table.insert(GameState.pickups, { part = orb, value = value, flyingTo = nil, baseSize = s })
@@ -172,6 +205,7 @@ local function updatePickups(dt)
 				local dist = delta.Magnitude
 				if dist <= Config.PICKUP.COLLECT_DIST then
 					EconomySystem.add(p.flyingTo, p.value) -- cộng scrap cho chủ
+					notifyCollect(p.flyingTo) -- SFX "collect" cho chủ (throttled)
 						if MatchState.isPlaying() then spawnRandomOrb() end -- HỒI LẠI: thu 1 -> sinh 1 orb mới
 					p.part:Destroy()
 					table.remove(GameState.pickups, i)

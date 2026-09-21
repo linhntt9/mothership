@@ -273,8 +273,9 @@ notify.Text = ""
 notify.Parent = gui
 
 local notifyToken = 0
-Remotes.Notify.OnClientEvent:Connect(function(text)
+Remotes.Notify.OnClientEvent:Connect(function(text, kind)
 	notify.Text = text
+	notify.TextColor3 = (kind == "ok") and Color3.fromRGB(180, 255, 190) or Color3.fromRGB(255, 200, 200)
 	notifyToken += 1
 	local myToken = notifyToken
 	task.delay(2, function()
@@ -577,7 +578,10 @@ local function closeUI()
 end
 
 sellBtn.Activated:Connect(function()
-	if selectedPart and selectedPart.Parent then Remotes.SellBuilding:FireServer(selectedPart) end
+	if selectedPart and selectedPart.Parent then
+		Remotes.SellBuilding:FireServer(selectedPart)
+		require(script.Parent.Sfx).play("delete")
+	end
 	closeUI()
 end)
 upBtn.Activated:Connect(function()
@@ -795,7 +799,7 @@ if UserInputService.TouchEnabled then
 	end
 	-- Split (giữ để tách bầy) — bên trái Spawn
 	local splitBtn = smallAction(-116, -46, "Split", Color3.fromRGB(30, 42, 68))
-	splitBtn.MouseButton1Down:Connect(function() Remotes.SplitInput:FireServer(true) end)
+	splitBtn.MouseButton1Down:Connect(function() Remotes.SplitInput:FireServer(true); require(script.Parent.Sfx).play("split") end)
 	splitBtn.MouseButton1Up:Connect(function() Remotes.SplitInput:FireServer(false) end)
 
 	-- Cancel xây (chỉ hiện khi đang ở chế độ đặt building)

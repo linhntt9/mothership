@@ -370,10 +370,14 @@ local function packRings(list, center, dt, skipCenter)
 	-- kể cả khi split (mỗi cụm cũng dùng chung hàm này).
 	local S = Config.FLEET.HEX_SPACING or 11
 	buildHexSlots(n, skipCenter)
+	-- Xoay NHẸ cả đội hình quanh tâm (Tàu Mẹ) theo globalTheta (ORBIT_SPIN rad/s).
+	local cosT, sinT = math.cos(globalTheta), math.sin(globalTheta)
 	for i = 1, n do
 		local q, r = _hexQ[i], _hexR[i]
-		local wx = S * (q + r * 0.5) -- axial -> world (6 hàng xóm cách đều S)
-		local wz = S * SQRT3_2 * r
+		local hx = S * (q + r * 0.5) -- axial -> world (6 hàng xóm cách đều S)
+		local hz = S * SQRT3_2 * r
+		local wx = hx * cosT - hz * sinT -- quay quanh tâm theo globalTheta
+		local wz = hx * sinT + hz * cosT
 		local target = Vector3.new(center.X + wx, center.Y, center.Z + wz)
 		local faceDir
 		if wx ~= 0 or wz ~= 0 then faceDir = Vector3.new(wx, 0, wz).Unit end

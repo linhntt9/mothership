@@ -33,12 +33,10 @@ local lastMouseX, lastMouseY = nil, nil -- vị trí con trỏ frame trước (t
 
 Remotes.MatchState.OnClientEvent:Connect(function(s)
 	playing = (s == "playing")
-	if playing then rotating = false end
 end)
 
 -- Zoom bằng lăn chuột (không lọc gameProcessed vì camera mặc định nuốt sự kiện này).
 UserInputService.InputChanged:Connect(function(input)
-	if playing then return end
 	if input.UserInputType == Enum.UserInputType.MouseWheel then
 		local c = Config.LOBBY.CAM
 		lobbyZoom = math.clamp(lobbyZoom - input.Position.Z * 0.12, c.ZOOM_MIN, c.ZOOM_MAX)
@@ -48,7 +46,6 @@ end)
 -- Giữ chuột phải = bật xoay; góc yaw cập nhật trong RenderStepped theo chênh lệch
 -- vị trí con trỏ (cách này KHÔNG bị camera mặc định tranh chấp như MouseBehavior).
 UserInputService.InputBegan:Connect(function(input)
-	if playing then return end
 	if input.UserInputType == Enum.UserInputType.MouseButton2 then
 		rotating = true
 		local mp = UserInputService:GetMouseLocation()
@@ -70,7 +67,7 @@ local function touchCount() local n = 0 for _ in pairs(touches) do n += 1 end re
 UserInputService.InputBegan:Connect(function(input, gp)
 	if input.UserInputType ~= Enum.UserInputType.Touch then return end
 	touches[input] = Vector2.new(input.Position.X, input.Position.Y)
-	if playing or gp then return end
+	if gp then return end
 	local cam = Workspace.CurrentCamera
 	local vpx = (cam and cam.ViewportSize.X) or 1000
 	if touchCount() == 1 and input.Position.X > vpx * 0.42 then camTouch = input end -- nửa phải = xoay
@@ -79,7 +76,6 @@ UserInputService.InputChanged:Connect(function(input)
 	if input.UserInputType ~= Enum.UserInputType.Touch or not touches[input] then return end
 	local newp = Vector2.new(input.Position.X, input.Position.Y)
 	local old = touches[input]; touches[input] = newp
-	if playing then return end
 	local c = Config.LOBBY.CAM
 	if touchCount() >= 2 then
 		camTouch = nil
@@ -138,12 +134,8 @@ RunService.RenderStepped:Connect(function(dt)
 
 	-- Bám cứng vào vị trí Tàu Mẹ (part đã được ShipSmooth nội suy mượt ở client).
 	local pos = myShip.Position
-	local camPos, lookAt
-	if playing then
-		-- Trong trận: top-down (nhìn thẳng xuống, hơi nghiêng theo Z).
-		camPos = pos + Vector3.new(0, Config.CAMERA.HEIGHT, Config.CAMERA.TILT_OFFSET)
-		lookAt = pos
-	else
+	-- Camera orbit cầu quanh Tàu Mẹ trong MỌI chế độ (lobby & trong trận — đồng bộ).
+	do
 		-- Lobby: orbit cầu quanh Tàu Mẹ. Giữ chuột phải + rê: NGANG = xoay (yaw),
 		-- DỌC = ngẩng/cúi (pitch). Lăn chuột = zoom khoảng cách.
 		local c = Config.LOBBY.CAM
@@ -161,10 +153,10 @@ RunService.RenderStepped:Connect(function(dt)
 		local radius = math.sqrt(c.HEIGHT * c.HEIGHT + c.BACK * c.BACK) * lobbyZoom
 		local pitch = math.clamp(math.atan2(c.HEIGHT, c.BACK) + lobbyPitch, 0.05, 1.5)
 		local cp = math.cos(pitch) * radius
-		camPos = pos + Vector3.new(math.sin(lobbyYaw) * cp, math.sin(pitch) * radius, math.cos(lobbyYaw) * cp)
+		local camPos = pos + Vector3.new(math.sin(lobbyYaw) * cp, math.sin(pitch) * radius, math.cos(lobbyYaw) * cp)
 		-- Kéo xuống góc thấp (pitch nhỏ) -> NÂNG điểm nhìn lên trời để camera ngước lên.
 		local skyBoost = math.max(0, 0.5 - pitch) * radius * 1.6
-		lookAt = pos + Vector3.new(0, c.LOOK_UP + skyBoost, 0)
+		local lookAt = pos + Vector3.new(0, c.LOOK_UP + skyBoost, 0)
+		camera.CFrame = CFrame.lookAt(camPos, lookAt)
 	end
-	camera.CFrame = CFrame.lookAt(camPos, lookAt)
 end)

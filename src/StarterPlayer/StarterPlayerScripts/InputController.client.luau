@@ -224,6 +224,7 @@ UserInputService.InputBegan:Connect(function(input, gameProcessed)
 		enterBuildMode("PlasmaSat")                             -- Y: Plasma Satellite
 	elseif input.KeyCode == Enum.KeyCode.Space then
 		Remotes.SplitInput:FireServer() -- Space = phân hạch +1 bậc (Lordz), tự gộp sau vài giây
+		require(script.Parent.Sfx).play("split")
 	elseif input.KeyCode == Enum.KeyCode.Escape then
 		if buildMode then exitBuildMode() end
 	end
@@ -431,33 +432,26 @@ RunService.RenderStepped:Connect(function(dt)
 			if ship then
 				Remotes.MoveInput:FireServer(ship.Position)
 			end
-		elseif playing then
-			local ship = getMyShip()
-			if player:GetAttribute("BuildingUIOpen") then
-				-- Đang mở UI nâng cấp nhà -> Tàu Mẹ ĐỨNG YÊN.
-				if ship then Remotes.MoveInput:FireServer(ship.Position) end
-			elseif point then
-				-- Leash: kẹp đích cách Tàu Mẹ tối đa MOVE_LEASH (trỏ chuột kéo trong 1 khoảng).
-				if ship then
-					local sp = ship.Position
-					Remotes.AimInput:FireServer(point) -- con trỏ THÔ (trước leash) -> vệ tinh split chase
-						local flat = Vector3.new(point.X - sp.X, 0, point.Z - sp.Z)
-					local leash = Config.MOTHERSHIP.MOVE_LEASH or 1e9
-					if flat.Magnitude > leash then
-						point = sp + flat.Unit * leash
-					end
-				end
-				Remotes.MoveInput:FireServer(point)
-			end
 		else
-			-- Lobby: lái bằng WASD (giữ = tiến theo hướng phím, thả = dừng).
+			-- PC: lái bằng WASD trong CẢ lobby lẫn trong trận (đồng bộ điều khiển).
+			-- Giữ phím = tiến theo hướng camera, thả = dừng. Chuột được giải phóng cho
+			-- click mục tiêu / đặt nhà (không còn lái tàu bằng chuột).
 			local ship = getMyShip()
 			if ship then
-				local dir = wasdDir()
-				if dir.Magnitude > 0 then
-					Remotes.MoveInput:FireServer(ship.Position + dir.Unit * LOBBY_AHEAD)
-				else
+				if playing and player:GetAttribute("BuildingUIOpen") then
+					-- Đang mở UI nâng cấp nhà -> Tàu Mẹ ĐỨNG YÊN.
 					Remotes.MoveInput:FireServer(ship.Position)
+				else
+					local dir = wasdDir()
+					if dir.Magnitude > 0 then
+						Remotes.MoveInput:FireServer(ship.Position + dir.Unit * LOBBY_AHEAD)
+					else
+						Remotes.MoveInput:FireServer(ship.Position)
+					end
+				end
+				-- Trong trận: con trỏ vẫn gửi AimInput cho vệ tinh split chase theo chuột.
+				if playing and point then
+					Remotes.AimInput:FireServer(point)
 				end
 			end
 		end

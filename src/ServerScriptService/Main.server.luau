@@ -165,7 +165,7 @@ local function loadPlayer(uid)
 		playerDirty[uid] = true
 		local player = Players:GetPlayerByUserId(uid)
 		if player then
-			Remotes.Notify:FireClient(player, ("Quà đăng nhập: +%d 💎"):format(Config.GEMS.DAILY))
+			Remotes.Notify:FireClient(player, ("Quà đăng nhập: +%d 💎"):format(Config.GEMS.DAILY), "ok")
 		end
 	end
 end

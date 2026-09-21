@@ -93,6 +93,8 @@ local function killMothership(ent)
 	local ownerId = ent.ownerId
 	local wasBot = ent.isBot
 	local killerName = displayName(ent.lastAttackerId)
+	-- Kill feed cho MỌI người: ai đã hạ ai (killerName nil = chết do môi trường/biên).
+	Remotes.KillFeed:FireAllClients(killerName, displayName(ownerId))
 	awardMatchGems(ent, false) -- thưởng Gem cuối trận (thua) trước khi chụp stats
 	local deadStats = statsFor(ent)
 

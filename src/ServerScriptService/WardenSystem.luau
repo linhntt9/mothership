@@ -81,6 +81,7 @@ end
 function WardenSystem.onCoreDestroyed(killerId)
 	local W = Config.WARDEN
 	task.defer(function()
+		Remotes.WardenDown:FireAllClients() -- báo mọi người: Warden bị hạ (SFX)
 		-- Thưởng + RESET người ra đòn kết liễu (chỉ player thật).
 		if killerId and killerId > 0 then
 			EconomySystem.addGem(killerId, W.REWARD_GEM or 500)
@@ -91,7 +92,7 @@ function WardenSystem.onCoreDestroyed(killerId)
 			end
 			local p = Players:GetPlayerByUserId(killerId)
 			if p then
-				Remotes.Notify:FireClient(p, ("⚔ Hạ WARDEN! +%d Gems (quân & nhà bị reset)"):format(W.REWARD_GEM or 500))
+				Remotes.Notify:FireClient(p, ("⚔ Hạ WARDEN! +%d Gems (quân & nhà bị reset)"):format(W.REWARD_GEM or 500), "ok")
 			end
 		end
 		-- Dọn phần Warden còn lại (tháp/troll) rồi HỒI SINH sau vài giây.

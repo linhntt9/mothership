@@ -180,7 +180,7 @@ local function makeCard(order, q)
 	elseif q.complete then
 		btn.Text = "NHẬN"; btn.BackgroundColor3 = GOLD; btn.TextColor3 = Color3.fromRGB(30, 24, 10)
 		btn.AutoButtonColor = true
-		btn.Activated:Connect(function() Remotes.ClaimQuest:FireServer(q.id) end)
+		btn.Activated:Connect(function() Remotes.ClaimQuest:FireServer(q.id); require(script.Parent.Sfx).play("claim") end)
 	else
 		btn.Text = "Chưa xong"; btn.BackgroundColor3 = Color3.fromRGB(50, 56, 74)
 		btn.TextColor3 = Color3.fromRGB(160, 168, 186)

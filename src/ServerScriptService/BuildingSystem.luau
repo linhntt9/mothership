@@ -202,6 +202,7 @@ local function createBuilding(ownerId, buildingType, tier, position, node)
 	part.Material = Enum.Material.Metal
 	part:SetAttribute("OwnerUserId", ownerId)
 	part:SetAttribute("Tier", tier)    -- cho client hiện UI nâng cấp
+	part:SetAttribute("BuildingType", buildingType) -- cho client (SFX) biết loại nhà
 	part.Parent = folder
 
 	local fill = attachHealthBar(part, part.Size.Y / 2 + 4)
@@ -396,7 +397,7 @@ local function onPlaceBuilding(player, buildingType, point)
 	if Config.MOTHERSHIP.BUILD_CHANNEL <= 0 then
 		-- Xây TỨC THÌ, không channel / không khoá di chuyển
 		createBuilding(ownerId, buildingType, 1, buildPos, node)
-		Remotes.Notify:FireClient(player, buildingType .. " đã xây")
+		Remotes.Notify:FireClient(player, buildingType .. " đã xây", "ok")
 	else
 		-- Có channel: khoá di chuyển tới khi xong
 		owner.channel = {
@@ -461,7 +462,7 @@ local function onUpgrade(player, part)
 		FleetSystem.sendFleetUpdate(ownerId)
 	end
 	BuildingSystem.updateHealthBar(b)
-	Remotes.Notify:FireClient(player, "Nâng cấp lên tier " .. b.tier)
+	Remotes.Notify:FireClient(player, "Nâng cấp lên tier " .. b.tier, "ok")
 end
 
 -- Bán building: hoàn SELL_REFUND * tổng đã đầu tư, rồi huỷ.
@@ -476,7 +477,7 @@ local function onSell(player, part)
 	local refund = math.floor((b.invested or 0) * Config.ECONOMY.SELL_REFUND)
 	EconomySystem.add(ownerId, refund)
 	BuildingSystem.destroyBuilding(b)
-	Remotes.Notify:FireClient(player, ("Đã bán (+%d ◈)"):format(refund))
+	Remotes.Notify:FireClient(player, ("Đã bán (+%d ◈)"):format(refund), "ok")
 end
 
 -------------------------------------------------------------------------------
@@ -493,7 +494,7 @@ local function updateChannels(dt)
 				owner.channel = nil
 				if player then
 					Remotes.BuildStatus:FireClient(player, false, 1)
-					Remotes.Notify:FireClient(player, ch.buildingType .. " đã xây xong")
+					Remotes.Notify:FireClient(player, ch.buildingType .. " đã xây xong", "ok")
 				end
 			elseif player then
 				local progress = 1 - (ch.timeLeft / ch.total)

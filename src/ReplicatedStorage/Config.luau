@@ -25,7 +25,7 @@ Config.MAP = {
 	-- (tinh thể phát sáng) để phân biệt với mặt đất trống (chỗ đặt Hub).
 	ORE_DEPOSIT_COUNT = 24,    -- nhiều mỏ cho map lớn 2500 (proto 500 dùng 5)
 	ORE_DEPOSIT_MIN_GAP = 130, -- khoảng cách tối thiểu giữa 2 mỏ (studs)
-	ORE_DEPOSIT_RADIUS = 15,  -- bán kính "mặt" mỏ = 1.25 × cỡ công trình (24) / 2 → đường kính 30
+	ORE_DEPOSIT_RADIUS = 22,  -- bán kính "mặt" mỏ (to hơn cho dễ thấy); đường kính ~44
 
 	-- Spawn của player & bot nằm ở các GÓC map, cách tâm SPAWN_FRAC * nửa-map.
 	-- Server tính LIVE từ SIZE lúc spawn -> đổi SIZE rồi Chơi lại là spawn tự dãn
@@ -64,7 +64,7 @@ Config.LOBBY = {
 	ZONE_RADIUS = 30,           -- vào bán kính này quanh 1 cổng => mở shop/cổng đó
 	-- Camera sảnh: chếch từ SAU LƯNG nhìn tới (thấy cổng phía trước + chân trời),
 	-- khác camera top-down trong trận. Cổng nằm phía -Z nên "trước" = -Z, camera lùi +Z.
-	CAM = { HEIGHT = 42, BACK = 58, LOOK_AHEAD = 48, LOOK_UP = 10, ZOOM_MIN = 0.55, ZOOM_MAX = 2.0, ROT_SENS = 0.006 },
+	CAM = { HEIGHT = 55, BACK = 58, LOOK_AHEAD = 48, LOOK_UP = 10, ZOOM_MIN = 0.55, ZOOM_MAX = 2.0, ROT_SENS = 0.006 },
 	SHIP_SCALE = 1.9,                -- Tàu Mẹ ở lobby to hơn cho dễ nhìn/khoe skin
 	MOVE_MULT = 1.7,                 -- lobby lái nhanh/mượt hơn (nhân vào tốc độ nền)
 	-- Vị trí 3 cổng trong sảnh. id dùng cho client mở đúng panel.
@@ -167,8 +167,54 @@ Config.QUESTS = {
 -- CAMERA (client)
 -------------------------------------------------------------------------------
 Config.CAMERA = {
-	HEIGHT = 100,       -- studs phía trên mothership (nhỏ = gần hơn)
-	TILT_OFFSET = 34,   -- lệch nhẹ theo trục Z để có góc nghiêng (0 = top-down thuần)
+	-- (Camera trong trận giờ dùng chung Config.LOBBY.CAM — orbit chếch, xoay được.
+	--  HEIGHT/TILT_OFFSET dưới đây là của camera top-down CŨ, không còn dùng.)
+	HEIGHT = 100,
+	TILT_OFFSET = 34,
+	-- Chỉ hiện thanh máu Tàu Mẹ ĐỊCH khi Tàu Mẹ mình cách <= khoảng này (studs).
+	-- Xa hơn -> ẩn (không lộ máu địch từ xa). Tàu của mình luôn hiện.
+	ENEMY_HP_REVEAL_DIST = 250,
+}
+
+-------------------------------------------------------------------------------
+-- MUSIC (nhạc nền — client). Tự đổi theo trạng thái (lobby <-> trong trận).
+-- LƯU Ý: audio phải được experience này DÙNG ĐƯỢC (bạn/nhóm sở hữu, hoặc audio
+-- Roblox công khai) thì mới phát; audio riêng của người khác sẽ bị chặn.
+-------------------------------------------------------------------------------
+Config.MUSIC = {
+	LOBBY    = 9046476113,        -- nhạc sảnh
+	GAMEPLAY = 9046476113,        -- nhạc trong trận
+	VOLUME   = 0.5,               -- âm lượng nền
+	FADE     = 1.2,               -- giây crossfade khi đổi nhạc
+}
+
+-------------------------------------------------------------------------------
+-- SFX (hiệu ứng âm thanh — client). id = asset audio Roblox (phải dùng được).
+-- volume 0..~2 · minGap = giãn cách tối thiểu giữa 2 lần phát (chống spam).
+-------------------------------------------------------------------------------
+Config.SFX = {
+	build   = { id = 111174530730534, volume = 0.6 },                 -- xây nhà
+	delete  = { id = 125802339136892, volume = 0.6 },                 -- xoá/bán nhà
+	spawn   = { id = 72264591133889,  volume = 0.4,  minGap = 0.04 }, -- spawn unit
+	alert   = { id = 139345986070502, volume = 0.7,  minGap = 1.5 },  -- bị tấn công
+	shot    = { id = 137510557013265, volume = 0.3,  minGap = 0.07 }, -- laser & đạn (chung id)
+	uiClick = { id = 92708987611847,  volume = 0.5 },                 -- click UI
+	uiHover = { id = 119354387183704, volume = 0.3,  minGap = 0.03 }, -- hover UI
+	buildMine = { id = 6092007746,      volume = 0.6 },                 -- build Scrap Mine (riêng)
+	collect   = { id = 140515349341063, volume = 0.4,  minGap = 0.03 },-- nhặt scrap (pop từng viên)
+	upgrade   = { id = 80736831159506,  volume = 0.55 },               -- nâng cấp công trình
+	fail      = { id = 116107826564721, volume = 0.5,  minGap = 0.4 }, -- báo lỗi / không đủ
+	notify    = { id = 128187340772806, volume = 0.45, minGap = 0.2 }, -- thông báo thường (ok)
+	victory   = { id = 110509246525952, volume = 0.75 },               -- thắng
+	defeat    = { id = 121697828267510, volume = 0.75 },               -- thua
+	chest     = { id = 96183859756028,  volume = 0.6 },                -- mở rương gacha
+	claim     = { id = 80854650043151,  volume = 0.55 },               -- nhận quà / quest (chung id)
+	split     = { id = 135315310485417, volume = 0.4,  minGap = 0.1 }, -- phân hạch fleet
+	matchStart = { id = 108997749268841, volume = 0.6 },               -- vào trận
+	explode   = { id = 121558789638038, volume = 0.5,  minGap = 0.06 }, -- nổ (unit/Tàu Mẹ chết, AoE)
+	warden    = { id = 110509246525952, volume = 0.8 },                -- hạ Warden
+	levelup   = { id = 3120909354,      volume = 0.6 },                -- lên cấp
+	SHOT_HEAR_DIST = 220,  -- chỉ nghe tiếng bắn trong bán kính này quanh Tàu Mẹ mình
 }
 
 -------------------------------------------------------------------------------
@@ -176,10 +222,10 @@ Config.CAMERA = {
 -------------------------------------------------------------------------------
 Config.MOTHERSHIP = {
 	HP = 2000,
-	SPEED = 70,          -- studs/s (tốc độ nền khi hạm đội trống)
+	SPEED = 110,         -- studs/s (tốc độ nền khi hạm đội trống)
 	-- Càng nhiều quân càng nặng -> đi chậm. Tốc độ thực = SPEED * mult, với
 	-- mult = clamp(1 - tổngWeight * SPEED_WEIGHT_PENALTY, SPEED_MIN_MULT, 1).
-	SPEED_WEIGHT_PENALTY = 0.005, -- mỗi điểm weight giảm 0.5% tốc độ (weight giờ nặng hơn nên penalty nhỏ lại)
+	SPEED_WEIGHT_PENALTY = 0.0025, -- giảm 50%: mỗi điểm weight giảm 0.25% tốc độ
 	SPEED_MIN_MULT = 0.55,        -- sàn: không chậm hơn 55% tốc độ nền
 	RADIUS = 6,
 	BUILD_CHANNEL = 0, -- giây khoá di chuyển khi xây (0 = xây tức thì, không khoá)

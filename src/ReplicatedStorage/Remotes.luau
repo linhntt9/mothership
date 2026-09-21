@@ -69,6 +69,9 @@ local EVENT_NAMES = {
 	"PricesUpdate",    -- server -> client: giá hiện tại (leo thang) của unit & công trình
 	"BuildingAlert",   -- server -> client: công trình của mình bị đánh (vị trí) -> minimap báo động
 	"CombatNotify",    -- server -> client: banner combat ("atk"=bạn tấn công / "def"=bị tấn công)
+	"KillFeed",        -- server -> client (all): ai hạ ai (killerName|nil, victimName)
+	"ScrapCollect",    -- server -> client (chủ): vừa nhặt được scrap -> SFX collect
+	"WardenDown",      -- server -> client (all): Warden vừa bị hạ -> SFX + báo
 }
 
 local function getFolder()
