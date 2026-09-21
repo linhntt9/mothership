@@ -409,7 +409,7 @@ RunService.RenderStepped:Connect(function(dt)
 				local sp = ship.Position
 				-- Người chơi tự điều khiển (joystick) -> huỷ auto-lái tới cổng.
 				if ClientBus.autoGo and stickVec.Magnitude > 0.15 then ClientBus.autoGo = nil end
-				if buildMode or player:GetAttribute("BuildingUIOpen") then
+				if buildMode then -- chọn công trình không dừng tàu (mobile vẫn lái joystick)
 					Remotes.MoveInput:FireServer(sp)
 				elseif stickVec.Magnitude > 0.15 then
 					-- JOYSTICK ĐỘNG: lái theo HƯỚNG (camera-relative) + AimInput cùng hướng cho vệ tinh split.
@@ -438,7 +438,7 @@ RunService.RenderStepped:Connect(function(dt)
 			-- click mục tiêu / đặt nhà (không còn lái tàu bằng chuột).
 			local ship = getMyShip()
 			if ship then
-				if playing and player:GetAttribute("BuildingUIOpen") then
+				if false then -- (đã bỏ) chọn công trình KHÔNG còn dừng tàu -> luôn lái WASD
 					-- Đang mở UI nâng cấp nhà -> Tàu Mẹ ĐỨNG YÊN.
 					Remotes.MoveInput:FireServer(ship.Position)
 				else

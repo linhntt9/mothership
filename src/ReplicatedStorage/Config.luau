@@ -203,7 +203,7 @@ Config.SFX = {
 	buildMine = { id = 6092007746,      volume = 0.6 },                 -- build Scrap Mine (riêng)
 	collect   = { id = 140515349341063, volume = 0.4,  minGap = 0.03 },-- nhặt scrap (pop từng viên)
 	upgrade   = { id = 80736831159506,  volume = 0.55 },               -- nâng cấp công trình
-	fail      = { id = 116107826564721, volume = 0.5,  minGap = 0.4 }, -- báo lỗi / không đủ
+	fail      = { id = 116107826564721, volume = 0.5,  minGap = 1.5 }, -- báo lỗi / không đủ (giãn thưa)
 	notify    = { id = 128187340772806, volume = 0.45, minGap = 0.2 }, -- thông báo thường (ok)
 	victory   = { id = 110509246525952, volume = 0.75 },               -- thắng
 	defeat    = { id = 121697828267510, volume = 0.75 },               -- thua

@@ -79,14 +79,15 @@ end)
 -- Hạ Warden (broadcast toàn server).
 Remotes.WardenDown.OnClientEvent:Connect(function() Sfx.play("warden") end)
 
--- Lên cấp: LevelUpdate bắn thường xuyên (level suy từ scrap) -> chỉ kêu khi TĂNG.
-local prevLevel = nil
-Remotes.LevelUpdate.OnClientEvent:Connect(function(lv)
-	if type(lv) == "number" then
-		if prevLevel and lv > prevLevel then Sfx.play("levelup") end
-		prevLevel = lv
-	end
-end)
+-- SFX level up: ĐÃ TẮT (level suy từ scrap dao động liên tục -> gây loạn).
+-- Muốn bật lại: bỏ comment khối dưới.
+-- local maxLevel = nil
+-- Remotes.LevelUpdate.OnClientEvent:Connect(function(lv)
+-- 	if type(lv) == "number" then
+-- 		if maxLevel and lv > maxLevel then Sfx.play("levelup") end
+-- 		maxLevel = math.max(maxLevel or lv, lv)
+-- 	end
+-- end)
 
 -------------------------------------------------------------------------------
 -- XÂY NHÀ / SPAWN UNIT: nghe theo ChildAdded của mình (defer để attribute kịp set)
