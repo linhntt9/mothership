@@ -105,6 +105,87 @@ local function makeOreDeposits(container)
 	return made
 end
 
+-- THIÊN THẠCH TƯỜNG hình chữ V (2 cánh vuông góc 90°). Mỗi cánh là 1 tường đá dài;
+-- collision là CHUỖI VÒNG bám dọc 2 cánh (đăng ký vào GameState.obstacles) -> chắn
+-- di chuyển + đạn ĐÚNG theo hình tường, tạo góc nấp (trốn) / điểm nghẽn (vây bắt).
+local function addCollider(cx, cz, r)
+	table.insert(GameState.obstacles, { x = cx, z = cz, r = r })
+end
+
+local function buildArm(parent, cx, cz, dx, dz, armLen, W, H)
+	local midX, midZ = cx + dx * armLen / 2, cz + dz * armLen / 2
+	local wall = Instance.new("Part")
+	wall.Name = "Obstacle"; wall.Anchored = true; wall.CanCollide = false; wall.CanQuery = false; wall.CastShadow = false
+	wall.Size = Vector3.new(W, H, armLen) -- dài theo trục Z -> xoay bằng lookAt về hướng cánh
+	wall.CFrame = CFrame.lookAt(Vector3.new(midX, H / 2, midZ), Vector3.new(midX + dx, H / 2, midZ + dz))
+	wall.Color = Color3.fromRGB(44, 48, 62); wall.Material = Enum.Material.Slate
+	wall.Parent = parent
+	local vein = Instance.new("Part") -- vệt neon lạnh chạy dọc đỉnh tường
+	vein.Anchored = true; vein.CanCollide = false; vein.CanQuery = false; vein.CastShadow = false
+	vein.Size = Vector3.new(1.4, 1.6, armLen * 0.9)
+	vein.CFrame = CFrame.lookAt(Vector3.new(midX, H * 0.9, midZ), Vector3.new(midX + dx, H * 0.9, midZ + dz))
+	vein.Color = Color3.fromRGB(90, 150, 230); vein.Material = Enum.Material.Neon
+	vein.Parent = parent
+	local r = W * 0.62
+	local step, t = W * 0.9, 0
+	while t <= armLen do
+		addCollider(cx + dx * t, cz + dz * t, r)
+		t += step
+	end
+end
+
+local function makeVObstacle(parent, x, z, armLen, W, H)
+	local a = math.random() * math.pi * 2                                  -- hướng cánh 1 (ngẫu nhiên)
+	buildArm(parent, x, z, math.cos(a), math.sin(a), armLen, W, H)
+	buildArm(parent, x, z, math.cos(a + math.pi / 2), math.sin(a + math.pi / 2), armLen, W, H) -- cánh 2 vuông góc 90°
+	local k = Instance.new("Part")                                         -- khối GÓC (2 cánh gặp nhau)
+	k.Name = "Obstacle"; k.Anchored = true; k.CanCollide = false; k.CanQuery = false; k.CastShadow = false
+	k.Size = Vector3.new(W * 1.25, H * 1.06, W * 1.25)
+	k.CFrame = CFrame.new(x, H * 1.06 / 2, z) * CFrame.Angles(0, a, 0)
+	k.Color = Color3.fromRGB(52, 56, 70); k.Material = Enum.Material.Slate; k.Parent = parent
+	addCollider(x, z, W * 0.7)
+end
+
+-- Rải OBSTACLE_COUNT tường-V: né nhau, né mỏ, chừa trống quanh 4 góc spawn.
+local function makeObstacles(parent)
+	GameState.obstacles = {}
+	local M = Config.MAP
+	local n = M.OBSTACLE_COUNT or 0
+	if n <= 0 then return 0 end
+	local half = M.SIZE / 2
+	local margin, gap = 140, (M.OBSTACLE_MIN_GAP or 260)
+	local armMin, armMax = (M.OBSTACLE_ARM_MIN or 55), (M.OBSTACLE_ARM_MAX or 95)
+	local W = M.OBSTACLE_THICK or 22
+	local clear = M.OBSTACLE_SPAWN_CLEAR or 210
+	local sc = (M.SPAWN_FRAC or 0.8) * half
+	local corners = { Vector3.new(sc, 0, sc), Vector3.new(-sc, 0, sc), Vector3.new(sc, 0, -sc), Vector3.new(-sc, 0, -sc) }
+	local placed = {}
+	local made, attempts = 0, 0
+	while made < n and attempts < 800 do
+		attempts += 1
+		local x = math.random(-half + margin, half - margin)
+		local z = math.random(-half + margin, half - margin)
+		local armLen = math.random(armMin, armMax)
+		local p = Vector3.new(x, 0, z)
+		local ok = true
+		for _, q in ipairs(placed) do
+			if (q - p).Magnitude < gap then ok = false break end
+		end
+		if ok then for node in pairs(GameState.oreDeposits) do
+			if node.Parent and (Vector3.new(node.Position.X, 0, node.Position.Z) - p).Magnitude < armLen + M.ORE_DEPOSIT_RADIUS + 20 then ok = false break end
+		end end
+		if ok then for _, c in ipairs(corners) do
+			if (c - p).Magnitude < clear + armLen then ok = false break end
+		end end
+		if ok then
+			makeVObstacle(parent, x, z, armLen, W, math.random(40, 64))
+			table.insert(placed, p)
+			made += 1
+		end
+	end
+	return made
+end
+
 -- Dọn baseplate / spawn mặc định của place mẫu (nếu có) để tránh z-fighting
 -- với baseplate do script tạo (hai mặt phẳng trùng Y=0 sẽ nhấp nháy).
 local function clearDefaultTerrain()
@@ -122,6 +203,7 @@ function MapSystem.clearAll()
 	local dep = Workspace:FindFirstChild("OreDeposits")
 	if dep then dep:Destroy() end
 	table.clear(GameState.oreDeposits)
+	if GameState.obstacles then table.clear(GameState.obstacles) end
 	local base = Workspace:FindFirstChild("Baseplate")
 	if base then base:Destroy() end
 	local arena = Workspace:FindFirstChild("MapArena")
@@ -171,6 +253,13 @@ end
 -- radius = bán kính va chạm của thực thể đang di chuyển.
 function MapSystem.resolveSolids(pos, radius, selfPart)
 	radius = radius or 0
+	-- Vật cản địa hình (đẩy ra như mỏ) -> Tàu Mẹ + unit tự đi vòng, tạo lối trốn/vây.
+	local obs = GameState.obstacles
+	if obs then
+		for _, o in ipairs(obs) do
+			pos = pushOut(pos, o.x, o.z, o.r + radius)
+		end
+	end
 	-- Mỏ
 	local dmin = Config.MAP.ORE_DEPOSIT_RADIUS + radius
 	for node in pairs(GameState.oreDeposits) do
@@ -221,8 +310,11 @@ function MapSystem.init()
 	wall(-half, 0, T, Config.MAP.SIZE + T)
 	wall(half, 0, T, Config.MAP.SIZE + T)
 
-	print(("[MapSystem] Map %dx%d, %d ore deposits (mỏ)"):format(
-		Config.MAP.SIZE, Config.MAP.SIZE, made))
+	-- VẬT CẢN ĐỊA HÌNH (đá/thiên thạch) — chắn đường tạo lối trốn / điểm vây bắt.
+	local madeObs = makeObstacles(arena)
+
+	print(("[MapSystem] Map %dx%d, %d ore deposits (mỏ), %d vật cản"):format(
+		Config.MAP.SIZE, Config.MAP.SIZE, made, madeObs))
 end
 
 -- Dựng lại map từ đầu theo Config hiện tại (dùng khi Chơi lại để áp số MAP mới).

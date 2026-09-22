@@ -20,7 +20,7 @@ local UserInputService = game:GetService("UserInputService")
 
 local Config = require(ReplicatedStorage.Config)
 local Remotes = require(ReplicatedStorage.Remotes)
-local ClientBus = require(script.Parent.ClientBus)
+local ClientBus = require(script.Parent:WaitForChild("ClientBus"))
 
 local player = Players.LocalPlayer
 local playerGui = player:WaitForChild("PlayerGui")

@@ -25,7 +25,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local UserInputService = game:GetService("UserInputService")
 
 local Config = require(ReplicatedStorage.Config)
-local ClientBus = require(script.Parent.ClientBus)
+local ClientBus = require(script.Parent:WaitForChild("ClientBus"))
 
 local player = Players.LocalPlayer
 local playerGui = player:WaitForChild("PlayerGui")
@@ -166,6 +166,20 @@ arrow.TextColor3 = COL_MY_SHIP
 arrow.ZIndex = 6
 arrow.Visible = false
 arrow.Parent = mapFrame
+
+-- AVATAR người chơi tại vị trí Tàu Mẹ mình (ảnh đầu bo tròn + viền màu team).
+local avatar = Instance.new("ImageLabel")
+avatar.Name = "MyAvatar"
+avatar.AnchorPoint = Vector2.new(0.5, 0.5)
+avatar.Size = UDim2.fromOffset(16, 16)
+avatar.BackgroundColor3 = Color3.fromRGB(20, 24, 34)
+avatar.Image = "rbxthumb://type=AvatarHeadShot&id=" .. tostring(player.UserId) .. "&w=48&h=48"
+avatar.ZIndex = 8
+avatar.Visible = false
+local avc = Instance.new("UICorner"); avc.CornerRadius = UDim.new(1, 0); avc.Parent = avatar
+local avs = Instance.new("UIStroke"); avs.Color = COL_MY_SHIP; avs.Thickness = 1.5; avs.Parent = avatar
+avatar.Parent = mapFrame
+
 local lastShipPos = nil
 local headingDeg = 0
 
@@ -241,8 +255,8 @@ local function redraw()
 	if myShip then
 		local mp = myShip.Position
 		local px, py = toMini(mp.X, mp.Z)
-		arrow.Position = UDim2.fromOffset(px, py)
-		arrow.Visible = true
+		avatar.Position = UDim2.fromOffset(px, py)
+		avatar.Visible = true
 		if lastShipPos then
 			local dx, dz = mp.X - lastShipPos.X, mp.Z - lastShipPos.Z
 			if (dx * dx + dz * dz) > 0.25 then -- đang di chuyển -> cập nhật hướng
@@ -253,7 +267,7 @@ local function redraw()
 		needle.Rotation = headingDeg -- kim la bàn cùng hướng
 		lastShipPos = mp
 	else
-		arrow.Visible = false
+		avatar.Visible = false
 	end
 
 	-- (dev) Hiện vị trí BOT khi bật nút "👁 Bot" trong bảng ⚙.

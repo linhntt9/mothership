@@ -23,7 +23,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Config = require(ReplicatedStorage.Config)
 local Remotes = require(ReplicatedStorage.Remotes)
-local ClientBus = require(script.Parent.ClientBus)
+local ClientBus = require(script.Parent:WaitForChild("ClientBus"))
 
 local player = Players.LocalPlayer
 local playerGui = player:WaitForChild("PlayerGui")
@@ -59,6 +59,11 @@ add("Kích thước map", "MAP.SIZE")
 add("Số mỏ", "MAP.ORE_DEPOSIT_COUNT")
 add("Khoảng cách mỏ", "MAP.ORE_DEPOSIT_MIN_GAP")
 add("Spawn góc (0..1)", "MAP.SPAWN_FRAC")
+add("Số thiên thạch (Chơi lại)", "MAP.OBSTACLE_COUNT")
+add("Thiên thạch: cánh min (Chơi lại)", "MAP.OBSTACLE_ARM_MIN")
+add("Thiên thạch: cánh max (Chơi lại)", "MAP.OBSTACLE_ARM_MAX")
+add("Thiên thạch: độ dày (Chơi lại)", "MAP.OBSTACLE_THICK")
+add("Thiên thạch: cách nhau (Chơi lại)", "MAP.OBSTACLE_MIN_GAP")
 
 add("— HẠM ĐỘI —", nil)
 add("Base Cap", "FLEET.BASE_CAP")
@@ -76,13 +81,21 @@ add("Start Scrap", "ECONOMY.START_SCRAP")
 add("Income Tick (s)", "ECONOMY.INCOME_TICK")
 add("Build Range", "ECONOMY.BUILD_RANGE")
 
-add("— SCRAP RẢI —", nil)
-add("Magnet Range", "PICKUP.MAGNET_RANGE")
-add("Fly Speed", "PICKUP.FLY_SPEED")
-add("Giá trị mỗi orb (+scrap)", "PICKUP.VALUE")
-add("Mật độ orb /100k (Chơi lại)", "PICKUP.SCRAP_PER_100K")
-add("Mật độ cụm /100k (Chơi lại)", "PICKUP.CLUSTER_PER_100K")
-add("Cluster size (Chơi lại)", "PICKUP.CLUSTER_SIZE")
+-- ===== TAB "Scrap" — tất cả về scrap rải + regen (chỉnh nhanh 1 chỗ) =====
+add("— MẬT ĐỘ / GIÁ TRỊ —", nil, "Scrap")
+add("Mật độ orb lẻ /100k", "PICKUP.SCRAP_PER_100K", "Scrap")
+add("Giá trị mỗi orb (+scrap)", "PICKUP.VALUE", "Scrap")
+add("— REGEN (tự hồi orb lẻ) —", nil, "Scrap")
+add("Regen: chu kỳ bù (s, nhỏ=nhanh)", "PICKUP.RESPAWN_INTERVAL", "Scrap")
+add("Regen: số orb mỗi đợt", "PICKUP.RESPAWN_BATCH", "Scrap")
+add("— HÚT / BAY —", nil, "Scrap")
+add("Magnet Range", "PICKUP.MAGNET_RANGE", "Scrap")
+add("Collect Dist", "PICKUP.COLLECT_DIST", "Scrap")
+add("Fly Speed", "PICKUP.FLY_SPEED", "Scrap")
+add("— CỤM 'MỎ' SCRAP (Chơi lại) —", nil, "Scrap")
+add("Mật độ cụm /100k", "PICKUP.CLUSTER_PER_100K", "Scrap")
+add("Cluster size (orb/mỏ)", "PICKUP.CLUSTER_SIZE", "Scrap")
+add("Cluster spread (bán kính)", "PICKUP.CLUSTER_SPREAD", "Scrap")
 
 -- Chỉ số từng loại quân (áp dụng cho quân spawn mới)
 for _, u in ipairs({ "Drone", "Frigate", "Destroyer", "PlasmaCruiser", "Interceptor", "Battleship", "SiegeRailgun", "Titan", "Kamikaze" }) do
@@ -260,10 +273,10 @@ local tabLayout = Instance.new("UIListLayout")
 tabLayout.FillDirection = Enum.FillDirection.Horizontal
 tabLayout.Padding = UDim.new(0, 6)
 tabLayout.Parent = tabBar
-for i, tname in ipairs({ "Game", "Bot", "Nhà" }) do
+for i, tname in ipairs({ "Game", "Scrap", "Bot", "Nhà" }) do
 	local tb = Instance.new("TextButton")
 	tb.LayoutOrder = i
-	tb.Size = UDim2.new(0, 88, 1, 0)
+	tb.Size = UDim2.new(0, 72, 1, 0)
 	tb.BackgroundColor3 = Color3.fromRGB(40, 46, 60)
 	tb.TextColor3 = Color3.fromRGB(230, 230, 235)
 	tb.Font = Enum.Font.GothamBold

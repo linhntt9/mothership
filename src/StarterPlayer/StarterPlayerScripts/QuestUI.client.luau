@@ -15,7 +15,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local IS_TOUCH = game:GetService("UserInputService").TouchEnabled
 
 local Remotes = require(ReplicatedStorage.Remotes)
-local ClientBus = require(script.Parent.ClientBus)
+local ClientBus = require(script.Parent:WaitForChild("ClientBus"))
 
 local player = Players.LocalPlayer
 local playerGui = player:WaitForChild("PlayerGui")

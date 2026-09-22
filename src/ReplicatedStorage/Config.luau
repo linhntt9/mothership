@@ -31,6 +31,17 @@ Config.MAP = {
 	-- Server tính LIVE từ SIZE lúc spawn -> đổi SIZE rồi Chơi lại là spawn tự dãn
 	-- theo, không rơi ra ngoài biên. 0.8 = 80% về phía góc.
 	SPAWN_FRAC = 0.8,
+
+	-- VẬT CẢN ĐỊA HÌNH (cụm đá/thiên thạch) rải trong arena: chắn đường -> tạo lối
+	-- TRỐN THOÁT và điểm NGHẼN để VÂY BẮT. Va chạm là LOGIC (đẩy Tàu Mẹ+unit ra khỏi,
+	-- không dùng physics); đạn bay bị hấp thụ khi trúng -> chắn được tầm bắn.
+	OBSTACLE_COUNT = 9,        -- số THIÊN THẠCH TƯỜNG chữ V rải trong map
+	OBSTACLE_ARM_MIN = 55,     -- chiều dài cánh tường ngắn nhất (studs)
+	OBSTACLE_ARM_MAX = 95,     -- chiều dài cánh tường dài nhất
+	OBSTACLE_THICK = 22,       -- độ dày tường (~ đường kính mỗi đoạn va chạm)
+	OBSTACLE_MIN_GAP = 260,    -- cách nhau tối thiểu (chừa hành lang di chuyển)
+	OBSTACLE_SPAWN_CLEAR = 210, -- chừa trống quanh 4 góc spawn (không bẫy lúc mới vào)
+	OBSTACLE_BLOCK_PROJECTILES = true, -- đạn bay bị vật cản chặn (nấp sau đá = tránh đạn)
 }
 Config.BOT_COUNT = 2
 
@@ -240,7 +251,7 @@ Config.MOTHERSHIP = {
 	AOE = 10,            -- bán kính sát thương lan quanh mục tiêu
 	PROJ_SPEED = 110,    -- (Lordz) Tàu Mẹ bắn ĐẠN BAY (không laser); tốc độ đạn (studs/s)
 	PROJ_RADIUS = 2.2,   -- bán kính đạn Tàu Mẹ
-	RADAR_RANGE = 200,   -- tầm RADAR: minimap chỉ lộ địch/mỏ trong bán kính này quanh Tàu Mẹ
+	RADAR_RANGE = 400,   -- tầm RADAR: minimap chỉ lộ địch/mỏ trong bán kính này quanh Tàu Mẹ
 
 	-- Tự hồi máu khi RA KHỎI giao tranh (không trúng đòn trong REGEN_DELAY giây).
 	REGEN_DELAY = 6,     -- giây kể từ phát trúng cuối mới bắt đầu hồi
@@ -420,8 +431,8 @@ Config.FORMATION_ORDER = {
 Config.PICKUP = {
 	-- MẬT ĐỘ scrap: số lượng tính theo DIỆN TÍCH map (studs²) nên đổi MAP.SIZE là
 	-- scrap tự co/giãn giữ mật độ. Đơn vị: "trên mỗi 100.000 studs²".
-	-- (Map 2500 -> diện tích 6.25M -> 62.5 đơn vị: 5*62.5≈312 orb, 0.35*62.5≈22 cụm.)
-	SCRAP_PER_100K   = 5,    -- số orb scrap lẻ duy trì / 100k studs²
+	-- (Map 2500 -> diện tích 6.25M -> 62.5 đơn vị: 12*62.5≈750 orb, 0.35*62.5≈22 cụm.)
+	SCRAP_PER_100K   = 12,   -- số orb scrap lẻ duy trì / 100k studs² (tăng mật độ)
 	CLUSTER_PER_100K = 0.35, -- số "mỏ" (cụm scrap dày) / 100k studs²
 	CLUSTER_SIZE     = 7,    -- orb mỗi mỏ
 	CLUSTER_SPREAD   = 22,   -- bán kính rải orb trong 1 mỏ (studs)
@@ -510,8 +521,8 @@ Config.ECONOMY = {
 	-- LASER SATELLITE (Arrow Tower): tháp phòng thủ ĐƠN mục tiêu, đất trống, tối đa 30.
 	-- Nâng tier = +% damage (dmgMult). base = chỉ số bắn nền.
 	LASER_SAT = {
-		MAX = 30, hpBase = 900,
-		base = { dmg = 28, range = 126, fireRate = 3.0, aoe = 0, -- tầm ×3 (42->126), dmg ×2 (14->28), fireRate ×2 (1.5->3.0)
+		MAX = 30, hpBase = 1350, -- HP ×1.5 (900->1350)
+		base = { dmg = 28, range = 126, fireRate = 9.0, aoe = 0, -- tầm ×3 (42->126), dmg ×2 (14->28), fireRate ×9 tổng (giờ ×3 nữa: 3.0->9.0)
 			projectile = true, projSpeed = 150, projRadius = 2.0, projColor = Color3.fromRGB(120, 230, 255) }, -- đạn laser bay (nhìn thấy)
 		[1] = { cost = 500,  dmgMult = 1.00 },
 		[2] = { cost = 250,  dmgMult = 1.15 },
@@ -521,8 +532,12 @@ Config.ECONOMY = {
 
 	-- PLASMA SATELLITE (Mage Tower): tháp phòng thủ AoE, đất trống, tối đa 10.
 	PLASMA_SAT = {
-		MAX = 10, hpBase = 1000,
-		base = { dmg = 26, range = 36, fireRate = 0.9, aoe = 11 },
+		MAX = 10, hpBase = 2025, -- HP ×1.5 LaserSat (1350->2025)
+		-- range ×1.5 (126->189), dmg ×3 (28->84) so với LaserSat; AoE bán kính LỚN nhưng
+		-- chỉ tác động tối đa 6 unit gần tâm nổ nhất (aoeMax). Vẫn bắn 3 làn đạn toả quạt.
+		base = { dmg = 84, range = 189, fireRate = 0.9, aoe = 24, aoeMax = 6,
+			projectile = true, projSpeed = 95, projRadius = 2.8, projColor = Color3.fromRGB(210, 130, 255),
+			fanCount = 3, fanSpread = 0.28 },
 		[1] = { cost = 1500, dmgMult = 1.00 },
 		[2] = { cost = 500,  dmgMult = 1.10 },
 		[3] = { cost = 1000, dmgMult = 1.20 },

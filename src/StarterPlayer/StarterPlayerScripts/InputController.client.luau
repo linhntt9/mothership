@@ -22,7 +22,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Config = require(ReplicatedStorage.Config)
 local Remotes = require(ReplicatedStorage.Remotes)
-local ClientBus = require(script.Parent.ClientBus)
+local ClientBus = require(script.Parent:WaitForChild("ClientBus"))
 
 local player = Players.LocalPlayer
 local camera = Workspace.CurrentCamera
@@ -112,7 +112,42 @@ local function buildAtShip(buildingType)
 	if ship then Remotes.PlaceBuilding:FireServer(buildingType, ship.Position) end
 end
 
-ClientBus.enterBuild.Event:Connect(buildAtShip)  -- nút Nhà trên HUD -> build tại chỗ Tàu Mẹ
+-- ===== NGẮM ĐẶT NHÀ/THÁP: ghost XANH (đặt được) / ĐỎ (vướng) + SNAP tránh đè =====
+local function fdist(a, b) local dx, dz = a.X - b.X, a.Z - b.Z return math.sqrt(dx * dx + dz * dz) end
+local function pushOut(pt, c, minD)
+	local dx, dz = pt.X - c.X, pt.Z - c.Z
+	local d = math.sqrt(dx * dx + dz * dz)
+	if d < minD then
+		if d > 1e-4 then local k = minD - d; return Vector3.new(pt.X + dx / d * k, pt.Y, pt.Z + dz / d * k) end
+		return Vector3.new(pt.X + minD, pt.Y, pt.Z)
+	end
+	return pt
+end
+-- Mirror luật server (BuildingSystem.onPlaceBuilding): trong tầm xây + không trên mỏ +
+-- không quá gần building khác + trong map. SNAP nhích ra khỏi mỏ/building gần cho "vừa khít".
+local function groundBuildValid(pt, buildingType)
+	local ship = getMyShip()
+	if not ship then return false, pt end
+	local half = (Config.MAP.SIZE or 2500) / 2
+	local depR = (Config.MAP.ORE_DEPOSIT_RADIUS or 22) + 2
+	local gap = 28 * (Config.ECONOMY.BUILD_SIZE_MULT or 1) -- = MIN_BUILD_GAP server
+	pt = Vector3.new(math.clamp(pt.X, -half, half), 0, math.clamp(pt.Z, -half, half))
+	local of = Workspace:FindFirstChild("OreDeposits")
+	if of then for _, dp in ipairs(of:GetChildren()) do if dp:IsA("BasePart") then pt = pushOut(pt, dp.Position, depR + 1) end end end
+	local bf = Workspace:FindFirstChild("Buildings")
+	if bf then for _, b in ipairs(bf:GetChildren()) do if b:IsA("BasePart") then pt = pushOut(pt, b.Position, gap + 0.5) end end end
+	pt = Vector3.new(math.clamp(pt.X, -half, half), 0, math.clamp(pt.Z, -half, half))
+	local ok = fdist(ship.Position, pt) <= (Config.ECONOMY.BUILD_RANGE or 250)
+	if ok and of then for _, dp in ipairs(of:GetChildren()) do if dp:IsA("BasePart") and fdist(pt, dp.Position) <= depR then ok = false break end end end
+	if ok and bf then for _, b in ipairs(bf:GetChildren()) do if b:IsA("BasePart") and fdist(pt, b.Position) < gap then ok = false break end end end
+	return ok, pt
+end
+
+-- Nút HUD / phím: MỎ -> build tại chỗ (MineBuildPrompt lo prompt); NHÀ/THÁP -> chế độ ngắm ghost.
+local function onEnterBuild(buildingType)
+	if buildingType == "ScrapMine" then buildAtShip("ScrapMine") else enterBuildMode(buildingType) end
+end
+ClientBus.enterBuild.Event:Connect(onEnterBuild)
 ClientBus.cancelBuild.Event:Connect(function() if buildMode then exitBuildMode() end end)
 
 -------------------------------------------------------------------------------
@@ -195,7 +230,7 @@ UserInputService.InputBegan:Connect(function(input, gameProcessed)
 	if input.UserInputType == Enum.UserInputType.MouseButton1 then
 		if buildMode then
 			local pt = cursorWorldPoint()
-			if pt then Remotes.PlaceBuilding:FireServer(buildMode, pt) end
+			if pt then local ok, sp = groundBuildValid(pt, buildMode); if ok then Remotes.PlaceBuilding:FireServer(buildMode, sp) end end
 			exitBuildMode() -- đặt xong -> ghost biến mất ngay (muốn xây tiếp: bấm Q/R lại)
 		else
 			local bpart = buildingUnderCursor()
@@ -224,11 +259,11 @@ UserInputService.InputBegan:Connect(function(input, gameProcessed)
 	elseif input.KeyCode == Enum.KeyCode.Q then
 		buildAtShip("ScrapMine")                                -- Q: xây Mine tại chỗ (trên mỏ)
 	elseif input.KeyCode == Enum.KeyCode.R then
-		buildAtShip("DroneHub")                                 -- R: xây House tại chỗ
+		onEnterBuild("DroneHub")                                -- R: ngắm đặt House (ghost)
 	elseif input.KeyCode == Enum.KeyCode.T then
-		buildAtShip("LaserSat")                                 -- T: Laser Sat tại chỗ
+		onEnterBuild("LaserSat")                                -- T: ngắm đặt Laser Sat (ghost)
 	elseif input.KeyCode == Enum.KeyCode.Y then
-		buildAtShip("PlasmaSat")                                -- Y: Plasma Sat tại chỗ
+		onEnterBuild("PlasmaSat")                               -- Y: ngắm đặt Plasma Sat (ghost)
 	elseif input.KeyCode == Enum.KeyCode.Space then
 		Remotes.SplitInput:FireServer() -- Space = phân hạch +1 bậc (Lordz), tự gộp sau vài giây
 		require(script.Parent.Sfx).play("split")
@@ -332,7 +367,7 @@ if isTouch then
 		if processedByUI or not playing then return end
 		if buildMode then
 			local pt = cursorWorldPoint(pos)
-			if pt then Remotes.PlaceBuilding:FireServer(buildMode, pt) end
+			if pt then local ok, sp = groundBuildValid(pt, buildMode); if ok then Remotes.PlaceBuilding:FireServer(buildMode, sp) end end
 			exitBuildMode()
 		else
 			local bpart = buildingUnderCursor(pos)
@@ -402,7 +437,9 @@ RunService.RenderStepped:Connect(function(dt)
 	-- Ghost bám chuột khi đang ở chế độ xây
 	if buildMode and ghost and point then
 		local size = GHOST_SIZE[buildMode] or Vector3.new(6, 6, 6)
-		ghost.Position = Vector3.new(point.X, size.Y / 2, point.Z)
+		local okg, spg = groundBuildValid(point, buildMode)
+		ghost.Position = Vector3.new(spg.X, size.Y / 2, spg.Z)
+		ghost.Color = okg and Color3.fromRGB(120, 255, 150) or Color3.fromRGB(255, 90, 90)
 	end
 
 	-- Gửi move throttle 10Hz

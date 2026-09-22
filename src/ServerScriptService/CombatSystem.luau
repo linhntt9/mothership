@@ -433,7 +433,7 @@ local function findTarget(u)
 end
 
 -- AoE: gom mọi enemy trong bán kính rồi mới gây damage (tránh sửa bảng khi đang duyệt).
-local function applyAoe(centerPos, radius, attackerOwner, dmg, primary)
+local function applyAoe(centerPos, radius, attackerOwner, dmg, primary, maxCount)
 	local hits = {}
 	for _, other in ipairs(GameState.units) do
 		if other ~= primary and other.ownerId ~= attackerOwner and not other.remnant and other.part and other.part.Parent then
@@ -448,6 +448,14 @@ local function applyAoe(centerPos, radius, attackerOwner, dmg, primary)
 				table.insert(hits, e)
 			end
 		end
+	end
+	-- Giới hạn số mục tiêu (PlasmaSat: AoE bán kính lớn nhưng chỉ tác động tối đa maxCount unit
+	-- GẦN TÂM NỔ nhất). Không set -> đánh tất cả như cũ.
+	if maxCount and #hits > maxCount then
+		table.sort(hits, function(a, b)
+			return (a.part.Position - centerPos).Magnitude < (b.part.Position - centerPos).Magnitude
+		end)
+		for i = #hits, maxCount + 1, -1 do hits[i] = nil end
 	end
 	for _, ent in ipairs(hits) do
 		damageEntity(ent, dmg, attackerOwner)
@@ -505,9 +513,14 @@ local function firstEnemyHit(pr, pos)
 	return best
 end
 
-local function spawnProjectile(attacker, target)
+-- Xoay 1 vector phẳng quanh trục Y (dùng bắn CHÙM đạn toả quạt).
+local function rotateY(v, a)
+	local c, s = math.cos(a), math.sin(a)
+	return Vector3.new(v.X * c - v.Z * s, 0, v.X * s + v.Z * c)
+end
+local function spawnProjectile(attacker, target, dirOverride)
 	local origin = attacker.part.Position
-	local dir = flatUnitDir(origin, target.part.Position)
+	local dir = dirOverride or flatUnitDir(origin, target.part.Position)
 	if not dir then return end
 	local owner = GameState.motherships[attacker.ownerId]
 	local color = attacker.projColor or (owner and owner.teamColor) or Color3.new(1, 1, 1)
@@ -519,10 +532,23 @@ local function spawnProjectile(attacker, target)
 		pos = origin, dir = dir, speed = speed, range = range, traveled = 0,
 		dmg = attacker.dmg, aoe = attacker.aoe or 0, ownerId = attacker.ownerId, radius = r, color = color,
 		buildingOnly = attacker.targeting == "BUILDING_ONLY", -- Siege: đạn chỉ va chạm công trình
+		aoeMax = attacker.aoeMax, -- PlasmaSat: cap số unit trúng AoE
 	}
 	-- VFX (client): bay ĐÚNG tới mục tiêu rồi dừng (không xuyên qua) — gửi khoảng cách tới mục tiêu.
-	local visDist = math.min(range, (target.part.Position - origin).Magnitude)
+	local visDist = dirOverride and range or math.min(range, (target.part.Position - origin).Magnitude)
 	Remotes.ProjectileVFX:FireAllClients(origin, dir, speed, visDist, r, color)
+end
+
+-- Đạn có bị VẬT CẢN ĐỊA HÌNH chặn không? (nấp sau đá = tránh đạn). Tắt qua Config.
+local function terrainBlocks(pos)
+	if not Config.MAP.OBSTACLE_BLOCK_PROJECTILES then return false end
+	local obs = GameState.obstacles
+	if not obs then return false end
+	for _, o in ipairs(obs) do
+		local dx, dz = pos.X - o.x, pos.Z - o.z
+		if dx * dx + dz * dz <= o.r * o.r then return true end
+	end
+	return false
 end
 
 local function updateProjectiles(dt)
@@ -531,11 +557,12 @@ local function updateProjectiles(dt)
 		local step = pr.speed * dt
 		pr.pos = pr.pos + pr.dir * step
 		pr.traveled += step
+		if terrainBlocks(pr.pos) then table.remove(projectiles, i); continue end -- đá chắn đạn
 		local hit = firstEnemyHit(pr, pr.pos)
 		if hit then
 			local hitPos = hit.part.Position -- chốt trước khi damage (có thể huỷ part)
 			if pr.aoe > 0 then
-				applyAoe(hitPos, pr.aoe, pr.ownerId, pr.dmg, hit) -- nổ lan (trừ primary)
+				applyAoe(hitPos, pr.aoe, pr.ownerId, pr.dmg, hit, pr.aoeMax) -- nổ lan (trừ primary; cap aoeMax)
 				Remotes.Explosion:FireAllClients(hitPos, pr.aoe, pr.color) -- VFX nổ AoE (màu theo đạn)
 			end
 			damageEntity(hit, pr.dmg, pr.ownerId) -- primary
@@ -543,7 +570,7 @@ local function updateProjectiles(dt)
 		elseif pr.traveled >= pr.range then
 			-- Hết tầm: đạn có AoE (vd blast Battleship) vẫn NỔ tại điểm cuối.
 			if pr.aoe > 0 then
-				applyAoe(pr.pos, pr.aoe, pr.ownerId, pr.dmg, nil)
+				applyAoe(pr.pos, pr.aoe, pr.ownerId, pr.dmg, nil, pr.aoeMax)
 				Remotes.Explosion:FireAllClients(pr.pos, pr.aoe, pr.color)
 			end
 			table.remove(projectiles, i)
@@ -644,7 +671,19 @@ local function fireEntity(attacker, dt)
 
 	-- (Lordz) ĐẠN BAY: xạ thủ bắn projectile bay thẳng (trúng địch đầu tiên) thay hitscan.
 	if attacker.projectile then
-		spawnProjectile(attacker, target)
+		local n = attacker.fanCount or 1
+		if n <= 1 then
+			spawnProjectile(attacker, target)
+		else
+			-- BẮN CHÙM (PlasmaSat: 3 làn đạn) — toả quạt quanh hướng tới mục tiêu.
+			local base = flatUnitDir(attacker.part.Position, target.part.Position)
+			if base then
+				local spread = attacker.fanSpread or 0.28
+				for i = 1, n do
+					spawnProjectile(attacker, target, rotateY(base, (i - (n + 1) / 2) * spread))
+				end
+			end
+		end
 		attacker.cooldown = 1 / attacker.fireRate
 		return
 	end
@@ -667,7 +706,7 @@ local function fireEntity(attacker, dt)
 
 	damageEntity(target, attacker.dmg, attacker.ownerId)
 	if (attacker.aoe or 0) > 0 then
-		applyAoe(tpos, attacker.aoe, attacker.ownerId, attacker.dmg, target)
+		applyAoe(tpos, attacker.aoe, attacker.ownerId, attacker.dmg, target, attacker.aoeMax)
 	end
 
 	Remotes.FireLaser:FireAllClients(origin, tpos, color)
