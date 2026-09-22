@@ -571,10 +571,33 @@ upBtn.TextColor3 = Color3.fromRGB(255, 255, 255); upBtn.Text = "Upgrade"
 local upc = Instance.new("UICorner"); upc.CornerRadius = UDim.new(0, 8); upc.Parent = upBtn
 upBtn.Parent = ubox
 
+-- Vòng hiển thị tầm bắn (aggro) của tháp khi chọn nhà (thuần client).
+local rangeRing = nil
+local function hideRange()
+	if rangeRing then rangeRing:Destroy(); rangeRing = nil end
+end
+local function showRange(part)
+	hideRange()
+	local r = part:GetAttribute("Range")
+	if not r then return end -- chỉ tháp (LaserSat/PlasmaSat) mới có Range
+	local ring = Instance.new("Part")
+	ring.Name = "TowerRange"
+	ring.Anchored = true; ring.CanCollide = false; ring.CanQuery = false; ring.CastShadow = false
+	ring.Shape = Enum.PartType.Cylinder
+	ring.Size = Vector3.new(0.6, r * 2, r * 2) -- đĩa dẹt bán kính = tầm bắn
+	ring.CFrame = CFrame.new(part.Position.X, 1, part.Position.Z) * CFrame.Angles(0, 0, math.rad(90))
+	ring.Color = Color3.fromRGB(120, 230, 255)
+	ring.Material = Enum.Material.Neon
+	ring.Transparency = 0.7
+	ring.Parent = Workspace
+	rangeRing = ring
+end
+
 local function closeUI()
 	pop.Visible = false
 	selectedPart = nil
 	player:SetAttribute("BuildingUIOpen", false)
+	hideRange()
 end
 
 sellBtn.Activated:Connect(function()
@@ -618,6 +641,7 @@ ClientBus.selectBuilding.Event:Connect(function(part)
 		refreshUpgradeInfo(part)
 		pop.Visible = true
 		player:SetAttribute("BuildingUIOpen", true) -- Tàu Mẹ đứng yên
+		showRange(part) -- hiện vòng tầm aggro (nếu là tháp)
 	else
 		closeUI()
 	end

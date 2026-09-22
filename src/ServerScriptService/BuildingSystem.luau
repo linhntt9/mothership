@@ -183,8 +183,13 @@ local function applyStats(b, fullHeal)
 		b.range = base.range
 		b.fireRate = base.fireRate
 		b.aoe = base.aoe
+		b.projectile = base.projectile   -- tháp bắn ĐẠN BAY (nhìn thấy) nếu base bật
+		b.projSpeed = base.projSpeed
+		b.projRadius = base.projRadius
+		b.projColor = base.projColor
 		b.targeting = "UNITS_ONLY" -- tháp chỉ bắn quân địch
 		b.cooldown = b.cooldown or 0
+		if b.part then b.part:SetAttribute("Range", b.range) end -- cho client vẽ vòng tầm aggro
 	end
 end
 

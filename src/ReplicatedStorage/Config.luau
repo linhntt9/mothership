@@ -511,7 +511,8 @@ Config.ECONOMY = {
 	-- Nâng tier = +% damage (dmgMult). base = chỉ số bắn nền.
 	LASER_SAT = {
 		MAX = 30, hpBase = 900,
-		base = { dmg = 14, range = 42, fireRate = 1.5, aoe = 0 },
+		base = { dmg = 14, range = 42, fireRate = 1.5, aoe = 0,
+			projectile = true, projSpeed = 150, projRadius = 2.0, projColor = Color3.fromRGB(120, 230, 255) }, -- đạn laser bay (nhìn thấy)
 		[1] = { cost = 500,  dmgMult = 1.00 },
 		[2] = { cost = 250,  dmgMult = 1.15 },
 		[3] = { cost = 500,  dmgMult = 1.30 },
