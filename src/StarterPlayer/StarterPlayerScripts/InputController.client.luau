@@ -105,7 +105,14 @@ local function exitBuildMode()
 	clearGhost()
 end
 
-ClientBus.enterBuild.Event:Connect(enterBuildMode)
+-- ĐƠN GIẢN HÓA: build NGAY TẠI CHỖ Tàu Mẹ đang đứng (bỏ ghost + click map + ngắm chuột).
+-- Đứng trên mỏ -> xây ScrapMine; trên đất trống -> Hub/tháp. Server tự snap + validate.
+local function buildAtShip(buildingType)
+	local ship = getMyShip()
+	if ship then Remotes.PlaceBuilding:FireServer(buildingType, ship.Position) end
+end
+
+ClientBus.enterBuild.Event:Connect(buildAtShip)  -- nút Nhà trên HUD -> build tại chỗ Tàu Mẹ
 ClientBus.cancelBuild.Event:Connect(function() if buildMode then exitBuildMode() end end)
 
 -------------------------------------------------------------------------------
@@ -215,13 +222,13 @@ UserInputService.InputBegan:Connect(function(input, gameProcessed)
 	if unitType then
 		Remotes.SpawnUnit:FireServer(unitType)                  -- 1-4: mua quân
 	elseif input.KeyCode == Enum.KeyCode.Q then
-		enterBuildMode("ScrapMine")                             -- Q: xây Mine
+		buildAtShip("ScrapMine")                                -- Q: xây Mine tại chỗ (trên mỏ)
 	elseif input.KeyCode == Enum.KeyCode.R then
-		enterBuildMode("DroneHub")                              -- R: xây House
+		buildAtShip("DroneHub")                                 -- R: xây House tại chỗ
 	elseif input.KeyCode == Enum.KeyCode.T then
-		enterBuildMode("LaserSat")                              -- T: Laser Satellite
+		buildAtShip("LaserSat")                                 -- T: Laser Sat tại chỗ
 	elseif input.KeyCode == Enum.KeyCode.Y then
-		enterBuildMode("PlasmaSat")                             -- Y: Plasma Satellite
+		buildAtShip("PlasmaSat")                                -- Y: Plasma Sat tại chỗ
 	elseif input.KeyCode == Enum.KeyCode.Space then
 		Remotes.SplitInput:FireServer() -- Space = phân hạch +1 bậc (Lordz), tự gộp sau vài giây
 		require(script.Parent.Sfx).play("split")

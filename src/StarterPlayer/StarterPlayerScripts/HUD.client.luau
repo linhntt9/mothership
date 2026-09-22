@@ -336,7 +336,7 @@ hint.TextColor3 = Color3.fromRGB(180, 185, 200)
 hint.TextXAlignment = Enum.TextXAlignment.Center
 hint.Font = Enum.Font.Gotham
 hint.TextSize = 12
-hint.Text = "1-4: mua quân | Q: Mine (trên mỏ) | R: Hub | click map để đặt | click building: nâng cấp | chuột phải: huỷ | SPACE: Split"
+hint.Text = "1-4: mua quân | Q: Mine (lái lên mỏ) | R: Hub | T/Y: Tháp | (xây ngay tại chỗ Tàu Mẹ) | click building: nâng cấp | SPACE: Split"
 hint.Parent = gui
 
 -------------------------------------------------------------------------------

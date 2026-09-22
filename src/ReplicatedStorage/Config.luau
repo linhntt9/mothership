@@ -511,7 +511,7 @@ Config.ECONOMY = {
 	-- Nâng tier = +% damage (dmgMult). base = chỉ số bắn nền.
 	LASER_SAT = {
 		MAX = 30, hpBase = 900,
-		base = { dmg = 14, range = 42, fireRate = 1.5, aoe = 0,
+		base = { dmg = 28, range = 126, fireRate = 3.0, aoe = 0, -- tầm ×3 (42->126), dmg ×2 (14->28), fireRate ×2 (1.5->3.0)
 			projectile = true, projSpeed = 150, projRadius = 2.0, projColor = Color3.fromRGB(120, 230, 255) }, -- đạn laser bay (nhìn thấy)
 		[1] = { cost = 500,  dmgMult = 1.00 },
 		[2] = { cost = 250,  dmgMult = 1.15 },
@@ -530,6 +530,7 @@ Config.ECONOMY = {
 	},
 
 	BUILD_RANGE = 250,      -- rất rộng: đặt được ở bất kỳ mỏ nào nhìn thấy trên màn hình
+	MINE_PROMPT_REACH = 85, -- tới gần mỏ trống <= khoảng này -> tự hiện prompt "[E] Build Mine"
 	SELL_REFUND = 0.5,      -- bán building thu hồi 50% tổng scrap đã đầu tư
 	RAID_LOOT = 0.5,        -- (stretch) phá building địch -> attacker +50% build cost
 }
